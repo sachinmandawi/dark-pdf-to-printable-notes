@@ -82,6 +82,7 @@ let activeBoxIndex = -1;
 let dragStart = { x: 0, y: 0 };
 let boxOriginals = { x1: 0, y1: 0, x2: 0, y2: 0 };
 let tempBoxEl = null;
+let selectedBoxIndex = null;
 
 // Initialize Event Listeners
 document.addEventListener('DOMContentLoaded', async () => {
@@ -379,6 +380,7 @@ function setupPageNavigation() {
     prevPageBtn.addEventListener('click', () => {
         if (currentPage > 1) {
             currentPage--;
+            selectedBoxIndex = null;
             loadPreview();
         }
     });
@@ -396,6 +398,7 @@ function setupPageNavigation() {
         }
         if (currentPage < maxVal) {
             currentPage++;
+            selectedBoxIndex = null;
             loadPreview();
         }
     });
@@ -1290,7 +1293,7 @@ function setupDrawingEvents() {
         const curX = (e.clientX - rect.left) / rect.width * 100.0;
         const curY = (e.clientY - rect.top) / rect.height * 100.0;
         
-        // 1. Check if clicked a resize handle
+        // 1. Check if clicked a resize handle of the selected box
         if (e.target.classList.contains('box-resize-handle')) {
             activeAction = 'resizing';
             activeBoxIndex = parseInt(e.target.dataset.index);
@@ -1302,19 +1305,33 @@ function setupDrawingEvents() {
             return;
         }
         
-        // 2. Check if clicked inside a diagram box (to move/drag it)
+        // 2. Check if clicked inside a diagram box
         if (e.target.classList.contains('diagram-box')) {
-            activeAction = 'moving';
-            activeBoxIndex = parseInt(e.target.dataset.index);
-            const box = pageBoxes[currentPage][activeBoxIndex];
-            boxOriginals = { x1: box[0], y1: box[1], x2: box[2], y2: box[3] };
-            dragStart = { x: curX, y: curY };
-            e.stopPropagation();
-            e.preventDefault();
+            const idx = parseInt(e.target.dataset.index);
+            
+            if (idx === selectedBoxIndex) {
+                // Already selected, start moving
+                activeAction = 'moving';
+                activeBoxIndex = idx;
+                const box = pageBoxes[currentPage][activeBoxIndex];
+                boxOriginals = { x1: box[0], y1: box[1], x2: box[2], y2: box[3] };
+                dragStart = { x: curX, y: curY };
+                e.stopPropagation();
+                e.preventDefault();
+            } else {
+                // Select box and redraw
+                selectedBoxIndex = idx;
+                drawStoredBoxes();
+                e.stopPropagation();
+                e.preventDefault();
+            }
             return;
         }
         
-        // 3. Otherwise, start drawing a new box
+        // 3. Otherwise, click on background: deselect active box and start drawing a new one
+        selectedBoxIndex = null;
+        drawStoredBoxes();
+        
         activeAction = 'drawing';
         dragStart = { x: curX, y: curY };
         
@@ -1406,6 +1423,7 @@ function setupDrawingEvents() {
             if (w > 1.5 && h > 1.5) {
                 if (!pageBoxes[currentPage]) pageBoxes[currentPage] = [];
                 pageBoxes[currentPage].push([x1, y1, x1 + w, y1 + h]);
+                selectedBoxIndex = pageBoxes[currentPage].length - 1;
             }
             tempBoxEl.remove();
             tempBoxEl = null;
@@ -1440,24 +1458,29 @@ function drawStoredBoxes() {
         boxEl.style.width = w + '%';
         boxEl.style.height = h + '%';
         
-        // Single delete button
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'box-delete-btn';
-        deleteBtn.innerHTML = '&times;';
-        deleteBtn.title = 'Delete this diagram box';
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            pageBoxes[currentPage].splice(idx, 1);
-            drawStoredBoxes();
-            loadPreview();
-        });
-        boxEl.appendChild(deleteBtn);
-        
-        // Resize handle dot
-        const resizeHandle = document.createElement('div');
-        resizeHandle.className = 'box-resize-handle';
-        resizeHandle.dataset.index = idx;
-        boxEl.appendChild(resizeHandle);
+        if (idx === selectedBoxIndex) {
+            boxEl.classList.add('selected');
+            
+            // Single delete button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'box-delete-btn';
+            deleteBtn.innerHTML = '&times;';
+            deleteBtn.title = 'Delete this diagram box';
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                pageBoxes[currentPage].splice(idx, 1);
+                selectedBoxIndex = null;
+                drawStoredBoxes();
+                loadPreview();
+            });
+            boxEl.appendChild(deleteBtn);
+            
+            // Resize handle dot
+            const resizeHandle = document.createElement('div');
+            resizeHandle.className = 'box-resize-handle';
+            resizeHandle.dataset.index = idx;
+            boxEl.appendChild(resizeHandle);
+        }
         
         boxesContainer.appendChild(boxEl);
     });
