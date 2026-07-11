@@ -485,7 +485,6 @@ function showError(msg) {
     alert(msg);
 }
 
-// Pixel Processing Engine (JavaScript port of NumPy operations)
 function invertPixelsClientSide(data, mode, threshold, intensity) {
     for (let i = 0; i < data.length; i += 4) {
         let r = data[i];
@@ -514,27 +513,42 @@ function invertPixelsClientSide(data, mode, threshold, intensity) {
             let min_c = Math.min(r, g, b);
             let chroma = max_c - min_c;
             
-            let bg_val = 255.0 - max_c;
-            if (bg_val > threshold) {
-                bg_val = 255.0;
+            // 1. Color mask: 1.0 for colored, 0.0 for neutral
+            let color_mask = (chroma - 10.0) / 30.0;
+            if (color_mask < 0) color_mask = 0;
+            if (color_mask > 1) color_mask = 1;
+            
+            // 2. Inverted Neutral (white text -> black, black background -> white)
+            let neutral_r = 255.0 - r;
+            let neutral_g = 255.0 - g;
+            let neutral_b = 255.0 - b;
+            let max_neutral = Math.max(neutral_r, neutral_g, neutral_b);
+            if (max_neutral > threshold) {
+                neutral_r = 255.0;
+                neutral_g = 255.0;
+                neutral_b = 255.0;
             }
             
-            // Chroma blend mask (15 to 40)
-            let mask = (chroma - 15.0) / 25.0;
-            if (mask < 0) mask = 0;
-            if (mask > 1) mask = 1;
+            // 3. Color preservation:
+            // Scale original color based on intensity slider (default 110 means scale=1.0)
+            let scale = intensity / 110.0;
+            if (scale > 1) scale = 1.0;
             
-            // Scale text brightness
-            let scale = intensity / Math.max(max_c, 1);
-            if (scale > 1) scale = 1;
+            let scaled_r = r * scale;
+            let scaled_g = g * scale;
+            let scaled_b = b * scale;
+            let scaled_max_c = max_c * scale;
             
-            let text_r = r * scale;
-            let text_g = g * scale;
-            let text_b = b * scale;
+            // Background compensation
+            let bg_comp = 255.0 - scaled_max_c;
+            let color_r = Math.max(0, Math.min(255, scaled_r + bg_comp));
+            let color_g = Math.max(0, Math.min(255, scaled_g + bg_comp));
+            let color_b = Math.max(0, Math.min(255, scaled_b + bg_comp));
             
-            data[i] = Math.max(0, Math.min(255, (1.0 - mask) * bg_val + mask * text_r));
-            data[i+1] = Math.max(0, Math.min(255, (1.0 - mask) * bg_val + mask * text_g));
-            data[i+2] = Math.max(0, Math.min(255, (1.0 - mask) * bg_val + mask * text_b));
+            // 4. Combine
+            data[i] = Math.max(0, Math.min(255, (1.0 - color_mask) * neutral_r + color_mask * color_r));
+            data[i+1] = Math.max(0, Math.min(255, (1.0 - color_mask) * neutral_g + color_mask * color_g));
+            data[i+2] = Math.max(0, Math.min(255, (1.0 - color_mask) * neutral_b + color_mask * color_b));
         }
     }
 }
