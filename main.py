@@ -419,6 +419,9 @@ async def get_preview(
     dpi: int,
     threshold: int,
     intensity: int,
+    page_range: Optional[str] = "All",
+    slides_per_page: Optional[int] = 1,
+    slide_scale: Optional[int] = 95,
     boxes: Optional[str] = None
 ):
     if not os.path.exists(filepath):
@@ -426,45 +429,170 @@ async def get_preview(
         
     try:
         doc = fitz.open(filepath)
-        if page < 1 or page > len(doc):
-            raise HTTPException(status_code=400, detail="Invalid page index.")
+        total_slides = len(doc)
+        
+        # 1. Parse page range
+        pages_to_process = parse_page_range(page_range, total_slides)
+        if not pages_to_process:
+            raise HTTPException(status_code=400, detail="No pages to display in range.")
             
-        page_obj = doc.load_page(page - 1)
+        # 2. Check if we need grid preview
+        if slides_per_page == 1 and slide_scale == 100:
+            # Single page preview (Standard behavior)
+            if page < 1 or page > len(pages_to_process):
+                raise HTTPException(status_code=400, detail="Invalid page index.")
+            
+            p_idx = pages_to_process[page - 1]
+            page_obj = doc.load_page(p_idx)
+            
+            # Render original
+            zoom_orig = 1.2
+            pix_orig = page_obj.get_pixmap(matrix=fitz.Matrix(zoom_orig, zoom_orig))
+            img_orig = Image.frombytes("RGB", [pix_orig.width, pix_orig.height], pix_orig.samples)
+            
+            # Render target
+            zoom_target = dpi / 72.0
+            pix_target = page_obj.get_pixmap(matrix=fitz.Matrix(zoom_target, zoom_target))
+            arr = np.frombuffer(pix_target.samples, dtype=np.uint8).reshape((pix_target.height, pix_target.width, 3)).astype(np.float32)
+            
+            # Parse boxes for this specific page
+            parsed_boxes = None
+            if boxes:
+                try:
+                    import json
+                    all_boxes = json.loads(boxes)
+                    parsed_boxes = all_boxes.get(str(p_idx + 1))
+                except:
+                    pass
+            
+            img_inv = invert_pixels(arr, mode, threshold, intensity, parsed_boxes)
+            
+        else:
+            # Grid Layout preview (A4 size at 100 DPI for preview performance)
+            layouts = {
+                1: (1, 1, 'l'),
+                2: (1, 2, 'p'),
+                3: (1, 3, 'p'),
+                4: (2, 2, 'p'),
+                6: (2, 3, 'p'),
+                8: (2, 4, 'p'),
+                10: (2, 5, 'p')
+            }
+            cols, rows, orient = layouts.get(slides_per_page, (1, 1, 'l'))
+            
+            # A4 size at 100 DPI
+            a4_w = int(8.27 * 100)
+            a4_h = int(11.69 * 100)
+            page_w = a4_h if orient == 'l' else a4_w
+            page_h = a4_w if orient == 'l' else a4_h
+            
+            # Determine pages on this sheet
+            chunk_size = cols * rows
+            start_idx = (page - 1) * chunk_size
+            if start_idx < 0 or start_idx >= len(pages_to_process):
+                raise HTTPException(status_code=400, detail="Invalid layout page index.")
+                
+            end_idx = min(len(pages_to_process), page * chunk_size)
+            sheet_pages = pages_to_process[start_idx:end_idx]
+            
+            # Render slides at 100 DPI
+            zoom = 100 / 72.0
+            
+            slides_orig = []
+            slides_inv = []
+            
+            # Parse all boxes
+            all_boxes = {}
+            if boxes:
+                try:
+                    import json
+                    all_boxes = json.loads(boxes)
+                except:
+                    pass
+            
+            for p_idx in sheet_pages:
+                page_obj = doc.load_page(p_idx)
+                pix = page_obj.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+                
+                # Original
+                img_o = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                slides_orig.append(img_o)
+                
+                # Inverted
+                arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, 3)).astype(np.float32)
+                p_boxes = all_boxes.get(str(p_idx + 1))
+                img_i = invert_pixels(arr, mode, threshold, intensity, p_boxes)
+                slides_inv.append(img_i)
+            
+            # Build A4 layout canvases
+            img_orig = Image.new("RGB", (page_w, page_h), (255, 255, 255))
+            img_inv = Image.new("RGB", (page_w, page_h), (255, 255, 255))
+            
+            from PIL import ImageDraw
+            draw_orig = ImageDraw.Draw(img_orig)
+            draw_inv = ImageDraw.Draw(img_inv)
+            
+            # Sizing grid
+            margin_x = int(0.04 * page_w)
+            margin_y = int(0.04 * page_h)
+            gap_x = int(0.02 * page_w)
+            gap_y = int(0.02 * page_h)
+            
+            usable_w = page_w - 2 * margin_x - (cols - 1) * gap_x
+            usable_h = page_h - 2 * margin_y - (rows - 1) * gap_y
+            
+            cell_w = usable_w // cols
+            cell_h = usable_h // rows
+            
+            # Get aspect ratio of first slide
+            first_w, first_h = slides_orig[0].size
+            orig_aspect = first_w / first_h
+            target_aspect = cell_w / cell_h
+            
+            if orig_aspect > target_aspect:
+                fit_w = cell_w
+                fit_h = int(cell_w / orig_aspect)
+            else:
+                fit_h = cell_h
+                fit_w = int(cell_h * orig_aspect)
+                
+            # Apply slide scale
+            scale_factor = slide_scale / 100.0
+            fit_w = int(fit_w * scale_factor)
+            fit_h = int(fit_h * scale_factor)
+            
+            # Paste elements
+            for idx, (img_o, img_i) in enumerate(zip(slides_orig, slides_inv)):
+                img_o_res = img_o.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+                img_i_res = img_i.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+                
+                r_idx = idx // cols
+                c_idx = idx % cols
+                
+                cell_x = margin_x + c_idx * (cell_w + gap_x)
+                cell_y = margin_y + r_idx * (cell_h + gap_y)
+                
+                paste_x = cell_x + (cell_w - fit_w) // 2
+                paste_y = cell_y + (cell_h - fit_h) // 2
+                
+                # Paste original
+                img_orig.paste(img_o_res, (paste_x, paste_y))
+                draw_orig.rectangle([paste_x, paste_y, paste_x + fit_w, paste_y + fit_h], outline=(220, 220, 220), width=1)
+                
+                # Paste inverted
+                img_inv.paste(img_i_res, (paste_x, paste_y))
+                draw_inv.rectangle([paste_x, paste_y, paste_x + fit_w, paste_y + fit_h], outline=(220, 220, 220), width=1)
         
-        # Render original at standard 100 DPI for preview performance
-        zoom_orig = 1.2
-        pix_orig = page_obj.get_pixmap(matrix=fitz.Matrix(zoom_orig, zoom_orig))
-        img_orig = Image.frombytes("RGB", [pix_orig.width, pix_orig.height], pix_orig.samples)
-        
-        # Render target DPI for the inverted version to preview actual resolution
-        zoom_target = dpi / 72.0
-        pix_target = page_obj.get_pixmap(matrix=fitz.Matrix(zoom_target, zoom_target))
-        arr = np.frombuffer(pix_target.samples, dtype=np.uint8).reshape((pix_target.height, pix_target.width, 3)).astype(np.float32)
-        
-        # Parse boxes JSON string if provided
-        parsed_boxes = None
-        if boxes:
-            try:
-                import json
-                parsed_boxes = json.loads(boxes)
-            except Exception as ex:
-                print(f"Error parsing preview boxes: {ex}")
-        
-        # Process preview
-        img_inv = invert_pixels(arr, mode, threshold, intensity, parsed_boxes)
-        
-        # Encode original as PNG base64
+        # 3. Encode to PNG base64
         buf_orig = io.BytesIO()
         img_orig.save(buf_orig, format="PNG")
         base64_orig = base64.b64encode(buf_orig.getvalue()).decode("utf-8")
         
-        # Encode inverted as PNG base64
         buf_inv = io.BytesIO()
         img_inv.save(buf_inv, format="PNG")
         base64_inv = base64.b64encode(buf_inv.getvalue()).decode("utf-8")
         
         doc.close()
-        
         return {
             "before": base64_orig,
             "after": base64_inv
