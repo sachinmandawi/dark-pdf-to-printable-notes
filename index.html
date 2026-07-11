@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark PDF to Printable Notes Converter - Physics Wallah & Dark Slides</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- PDF.js for rendering PDF pages to canvas client-side -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <!-- jsPDF for compiling processed canvas slides into a new PDF client-side -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon">PW</div>
+            <div>
+                <h1>Dark PDF to Printable Notes</h1>
+                <p style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px;">Convert dark lecture notes to white background, ink-saving PDFs</p>
+            </div>
+        </div>
+        <div style="font-size: 0.85rem; color: var(--text-secondary); background: rgba(255,255,255,0.05); padding: 0.4rem 0.8rem; border-radius: 20px; border: 1px solid var(--card-border);">
+            Local Server: <span style="color: var(--secondary); font-weight: 600;">Active</span>
+        </div>
+    </header>
+
+    <main>
+        <!-- Left Panel: Files and Settings -->
+        <section class="control-panel">
+            
+            <!-- Card 1: File Selection -->
+            <div class="card" id="file-card">
+                <div class="card-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Select PDF Notes
+                </div>
+                
+                <!-- Drag and drop zone -->
+                <div class="upload-zone" id="upload-zone">
+                    <div class="upload-icon">📂</div>
+                    <div class="upload-text">
+                        Drag and drop your PDF here<br>
+                        or <span>browse files</span>
+                    </div>
+                    <input type="file" id="file-input" class="hidden" accept=".pdf">
+                </div>
+
+                <div class="divider">OR CHOOSE LOCAL PATH</div>
+
+                <!-- Local System Path Input -->
+                <div class="input-group">
+                    <label class="input-label" for="local-path">Absolute File Path on PC</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <input type="text" id="local-path" class="input-field" placeholder="e.g. D:\Yakeen NEET 2.0 2027\...\Cell.pdf" style="flex: 1;">
+                        <button id="load-path-btn" class="btn" style="width: auto; padding: 0 1rem; font-size: 0.9rem;">Load</button>
+                    </div>
+                </div>
+
+                <!-- Selected File Display -->
+                <div id="file-info-container" class="hidden">
+                    <div class="selected-file-box">
+                        <div class="selected-file-info">
+                            <span class="selected-file-name" id="info-name">notes.pdf</span>
+                            <span class="selected-file-meta" id="info-meta">0.0 MB | 0 Pages</span>
+                        </div>
+                        <button class="remove-file-btn" id="remove-file-btn" title="Remove file">&times;</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2: Settings -->
+            <div class="card" id="settings-card">
+                <div class="card-title">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    Conversion Settings
+                </div>
+
+                <div class="settings-grid">
+                    <!-- Mode -->
+                    <div class="setting-row">
+                        <label class="input-label" for="mode-select">Inversion Method</label>
+                        <select id="mode-select" class="input-field">
+                            <option value="smart" selected>Smart Color-Preserving (Recommended)</option>
+                            <option value="simple">Simple Negative Invert</option>
+                            <option value="grayscale">Pure Grayscale (Black & White)</option>
+                        </select>
+                    </div>
+
+                    <!-- Quality/DPI -->
+                    <div class="setting-row">
+                        <label class="input-label" for="dpi-select">Render Resolution (DPI)</label>
+                        <select id="dpi-select" class="input-field">
+                            <option value="100">100 DPI (Fast, Smaller File)</option>
+                            <option value="150" selected>150 DPI (Balanced Quality - Recommended)</option>
+                            <option value="300">300 DPI (High Resolution, Ultra Sharp)</option>
+                        </select>
+                    </div>
+
+                    <!-- Clean Background Threshold -->
+                    <div class="setting-row" id="bg-threshold-row">
+                        <div class="setting-row-header">
+                            <label class="input-label" for="bg-threshold">Clean Background Threshold</label>
+                            <span class="setting-value" id="bg-threshold-val">220</span>
+                        </div>
+                        <input type="range" id="bg-threshold" min="180" max="250" value="220">
+                    </div>
+
+                    <!-- Text Contrast/Darkness -->
+                    <div class="setting-row">
+                        <div class="setting-row-header">
+                            <label class="input-label" for="color-intensity">Text Darkness / Intensity</label>
+                            <span class="setting-value" id="color-intensity-val">110</span>
+                        </div>
+                        <input type="range" id="color-intensity" min="60" max="160" value="110">
+                        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: -0.25rem;">Lower values make handwritten pens darker</p>
+                    </div>
+
+                    <!-- Page Range -->
+                    <div class="setting-row">
+                        <label class="input-label" for="page-range">Page Range</label>
+                        <input type="text" id="page-range" class="input-field" placeholder="e.g. All, 1-5, 7, 10-15" value="All">
+                    </div>
+
+                    <!-- Output Filename -->
+                    <div class="setting-row">
+                        <label class="input-label" for="output-name">Output PDF Filename</label>
+                        <input type="text" id="output-name" class="input-field" placeholder="Auto-generated">
+                    </div>
+
+                    <!-- Action Button -->
+                    <button id="convert-btn" class="btn" disabled>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Convert PDF
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Panel: Live Preview & Progress -->
+        <section class="preview-container">
+            <!-- Preview Box -->
+            <div class="card" style="flex: 1; display: flex; flex-direction: column;" id="right-card">
+                <div class="card-title" style="margin-bottom: 1rem;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Interactive Page Preview
+                </div>
+
+                <!-- Preview Display Area -->
+                <div class="preview-box" id="preview-box">
+                    <!-- Placeholder State -->
+                    <div class="preview-placeholder" id="preview-placeholder">
+                        <i>📄</i>
+                        <p style="font-size: 1.05rem; font-weight: 600; color: var(--text-secondary);">No PDF Selected</p>
+                        <p style="font-size: 0.85rem; max-width: 300px; line-height: 1.4;">Select a PDF file or paste a path on the left to load a high-quality page preview and test inversion settings.</p>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div class="preview-placeholder hidden" id="preview-loading">
+                        <div class="spinner"></div>
+                        <p style="font-size: 0.95rem; font-weight: 500; color: var(--text-secondary);">Rendering page preview...</p>
+                    </div>
+
+                    <!-- Live Split Comparison Slider -->
+                    <div class="compare-container hidden" id="compare-container">
+                        <div class="compare-img-wrapper" id="compare-wrapper">
+                            <!-- After Image (Converted, sits at bottom) -->
+                            <img id="img-after-el" src="" alt="After Preview">
+                            
+                            <!-- Before Image (Original, sits in cropped wrapper on top) -->
+                            <div class="img-before" id="img-before-wrapper">
+                                <img id="img-before-el" src="" alt="Before Preview">
+                            </div>
+                            
+                            <!-- Slider Handles -->
+                            <div class="compare-slider-bar" id="compare-slider-bar">
+                                <div class="compare-slider-handle">↔</div>
+                            </div>
+                            
+                            <!-- Labels -->
+                            <span class="compare-label label-before">Dark (Original)</span>
+                            <span class="compare-label label-after">White (Inverted)</span>
+                        </div>
+                    </div>
+
+                    <!-- Progress Overlay State -->
+                    <div class="preview-placeholder hidden" id="conversion-progress-box" style="width: 100%;">
+                        <div class="progress-panel">
+                            <div class="progress-header">
+                                <div class="progress-title" id="progress-status-title">Processing PDF...</div>
+                                <div class="progress-subtitle" id="progress-status-sub">Inverting backgrounds page by page</div>
+                            </div>
+                            
+                            <div class="progress-percentage" id="progress-percentage-display">0%</div>
+                            
+                            <div class="progress-bar-container">
+                                <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                            </div>
+                            
+                            <div class="status-log" id="status-log">
+                                <!-- Logs populated dynamically -->
+                            </div>
+
+                            <button id="cancel-btn" class="btn" style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--error); color: var(--error); box-shadow: none; width: auto; font-size: 0.9rem; padding: 0.6rem 1.5rem;">
+                                Cancel Job
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Conversion Completed State -->
+                    <div class="preview-placeholder hidden" id="conversion-completed-box" style="width: 100%;">
+                        <div class="completed-box">
+                            <div class="success-icon-glow">✓</div>
+                            <div>
+                                <h3 style="font-size: 1.3rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem;">Conversion Completed!</h3>
+                                <p style="font-size: 0.9rem; color: var(--text-secondary); max-width: 380px; margin: 0 auto; line-height: 1.5;">Your PDF notes have been inverted successfully with pure white backgrounds.</p>
+                            </div>
+                            
+                            <div class="completed-actions">
+                                <button id="open-file-btn" class="btn">
+                                    📂 Open Converted PDF
+                                </button>
+                                <button id="open-folder-btn" class="btn-outline">
+                                    📂 Open Destination Folder
+                                </button>
+                                <button id="back-to-preview-btn" class="btn-outline" style="border-color: rgba(255,255,255,0.05); color: var(--text-secondary);">
+                                    ← Back to Preview
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Page Navigation footer inside card -->
+                <div class="preview-nav hidden" id="preview-nav">
+                    <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">
+                        Slide Comparison Viewer
+                    </span>
+                    <div class="page-controls">
+                        <button class="icon-btn" id="prev-page-btn" title="Previous page">◀</button>
+                        <span class="page-num-display">
+                            Page <span id="current-page-num">1</span> of <span id="total-page-num">1</span>
+                        </span>
+                        <button class="icon-btn" id="next-page-btn" title="Next page">▶</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>Physics Wallah Dark PDF Notes to Printable PDF Background Converter &copy; 2026 | Built for NEET / JEE Aspirants</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
