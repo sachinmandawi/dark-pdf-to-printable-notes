@@ -38,6 +38,7 @@ class ConvertRequest(BaseModel):
     page_range: str
     output_name: str
     slides_per_page: Optional[int] = 1
+    slide_scale: Optional[int] = 95
     boxes: Optional[dict] = None
 
 def add_task_log(task_id: str, text: str, level: str = "info"):
@@ -158,6 +159,7 @@ def convert_pdf_worker(
     page_range: str,
     output_name: str,
     slides_per_page: int = 1,
+    slide_scale: int = 95,
     boxes: Optional[dict] = None
 ):
     temp_files = []
@@ -230,7 +232,7 @@ def convert_pdf_worker(
         update_task_progress(task_id, 92, "Compiling PDF document...", "Compressing slides")
         add_task_log(task_id, f"Compiling inverted pages into final PDF ({slides_per_page} slides/page)...", "info")
         
-        if slides_per_page == 1:
+        if slides_per_page == 1 and slide_scale == 100:
             # 1 Slide Per Page (Standard compiler)
             images = [Image.open(tf) for tf in temp_files]
             if images:
@@ -246,6 +248,7 @@ def convert_pdf_worker(
         else:
             # N-up grid layouts on A4 paper: (cols, rows, orientation)
             layouts = {
+                1: (1, 1, 'l'),
                 2: (1, 2, 'p'),
                 3: (1, 3, 'p'),
                 4: (2, 2, 'p'),
@@ -288,6 +291,11 @@ def convert_pdf_worker(
                 fit_h = cell_h
                 fit_w = int(cell_h * orig_aspect)
                 
+            # Apply slide size scale factor
+            scale_factor = slide_scale / 100.0
+            fit_w = int(fit_w * scale_factor)
+            fit_h = int(fit_h * scale_factor)
+            
             grid_pages = []
             chunk_size = cols * rows
             
@@ -496,6 +504,7 @@ async def convert_pdf(req: ConvertRequest, background_tasks: BackgroundTasks):
             req.page_range,
             req.output_name,
             req.slides_per_page,
+            req.slide_scale,
             req.boxes
         )
     )
