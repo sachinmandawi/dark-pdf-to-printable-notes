@@ -31,7 +31,8 @@ const imgBefore = document.getElementById('img-before-el');
 const imgBeforeWrapper = document.getElementById('img-before-wrapper');
 const sliderBar = document.getElementById('compare-slider-bar');
 const previewNav = document.getElementById('preview-nav');
-const currentPageNumSpan = document.getElementById('current-page-num');
+const currentPageInput = document.getElementById('current-page-input');
+const drawHintBadge = document.getElementById('draw-hint-badge');
 const totalPageNumSpan = document.getElementById('total-page-num');
 const prevPageBtn = document.getElementById('prev-page-btn');
 const nextPageBtn = document.getElementById('next-page-btn');
@@ -239,6 +240,9 @@ function resetFileSelection() {
         drawModeBtn.style.background = '';
         drawModeBtn.textContent = '🎨 Draw Box';
     }
+    if (drawHintBadge) {
+        drawHintBadge.classList.add('hidden');
+    }
     if (boxesContainer) {
         boxesContainer.classList.add('hidden');
         boxesContainer.innerHTML = '';
@@ -403,6 +407,45 @@ function setupPageNavigation() {
             loadPreview();
         }
     });
+
+    if (currentPageInput) {
+        const handlePageInput = () => {
+            let val = parseInt(currentPageInput.value);
+            if (isNaN(val)) {
+                currentPageInput.value = currentPage;
+                return;
+            }
+            const slidesPerPage = parseInt(slidesSelect.value);
+            const slideScaleValPct = parseInt(slideScale.value);
+            const isGrid = (slidesPerPage > 1 || slideScaleValPct < 100);
+            const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
+            let maxVal = 1;
+            if (isDrawMode || !isGrid) {
+                maxVal = pages.length;
+            } else {
+                maxVal = Math.ceil(pages.length / slidesPerPage);
+            }
+            val = Math.max(1, Math.min(maxVal, val));
+            if (val !== currentPage) {
+                currentPage = val;
+                selectedBoxIndex = null;
+                loadPreview();
+            } else {
+                currentPageInput.value = currentPage;
+            }
+        };
+
+        currentPageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                handlePageInput();
+                currentPageInput.blur();
+            }
+        });
+
+        currentPageInput.addEventListener('change', () => {
+            handlePageInput();
+        });
+    }
 }
 
 function updatePageControls() {
@@ -421,7 +464,11 @@ function updatePageControls() {
     if (currentPage > maxVal) currentPage = maxVal || 1;
     if (currentPage < 1) currentPage = 1;
 
-    currentPageNumSpan.textContent = currentPage;
+    if (currentPageInput) {
+        currentPageInput.value = currentPage;
+        currentPageInput.max = maxVal || 1;
+        currentPageInput.disabled = (maxVal <= 1);
+    }
     totalPageNumSpan.textContent = maxVal || 1;
     prevPageBtn.disabled = (currentPage === 1);
     nextPageBtn.disabled = (currentPage >= maxVal);
@@ -1247,6 +1294,7 @@ function setupDrawingEvents() {
             drawModeBtn.textContent = '✔️ Done Drawing';
             boxesContainer.classList.remove('hidden');
             boxesContainer.style.pointerEvents = 'auto';
+            if (drawHintBadge) drawHintBadge.classList.remove('hidden');
             
             if (isGrid) {
                 const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
@@ -1262,6 +1310,7 @@ function setupDrawingEvents() {
             drawModeBtn.textContent = '🎨 Draw Box';
             boxesContainer.classList.add('hidden');
             boxesContainer.style.pointerEvents = 'none';
+            if (drawHintBadge) drawHintBadge.classList.add('hidden');
             
             if (isGrid) {
                 const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
