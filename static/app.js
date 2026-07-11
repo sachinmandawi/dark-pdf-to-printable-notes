@@ -355,6 +355,11 @@ function syncSliderDimensions() {
     const w = imgAfter.clientWidth;
     const h = imgAfter.clientHeight;
     
+    if (compareWrapper) {
+        compareWrapper.style.width = w + 'px';
+        compareWrapper.style.height = h + 'px';
+    }
+    
     imgBefore.style.width = w + 'px';
     imgBefore.style.height = h + 'px';
     imgBeforeWrapper.style.height = h + 'px';
