@@ -17,6 +17,7 @@ const colorIntensity = document.getElementById('color-intensity');
 const colorIntensityVal = document.getElementById('color-intensity-val');
 const pageRangeInput = document.getElementById('page-range');
 const outputNameInput = document.getElementById('output-name');
+const slidesSelect = document.getElementById('slides-select');
 const convertBtn = document.getElementById('convert-btn');
 
 const previewPlaceholder = document.getElementById('preview-placeholder');
@@ -706,12 +707,15 @@ async function startConversion() {
             try {
                 const { jsPDF } = window.jspdf;
                 let pdfDocOut = null;
+                const processedSlides = [];
+                const slidesPerPage = parseInt(slidesSelect.value);
+                const dpi = parseInt(dpiSelect.value);
                 
                 for (let idx = 0; idx < pages.length; idx++) {
                     const pageNum = pages[idx];
                     
                     // Update UI
-                    const pct = Math.round((idx / pages.length) * 90);
+                    const pct = Math.round((idx / pages.length) * 80);
                     progressPercentageDisplay.textContent = `${pct}%`;
                     progressBarFill.style.width = `${pct}%`;
                     progressStatusTitle.textContent = `Processing page ${pageNum + 1}...`;
@@ -720,7 +724,7 @@ async function startConversion() {
                     addLogEntry(`Rendering page ${pageNum + 1}...`, 'info');
                     
                     const pageObj = await clientPdfDoc.getPage(pageNum + 1);
-                    const scaleDPI = parseInt(dpiSelect.value) / 72.0;
+                    const scaleDPI = dpi / 72.0;
                     const viewport = pageObj.getViewport({scale: scaleDPI});
                     
                     const canvas = document.createElement('canvas');
@@ -744,22 +748,117 @@ async function startConversion() {
                     
                     // Compress to JPEG
                     const imgDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-                    const w = canvas.width;
-                    const h = canvas.height;
+                    processedSlides.push({
+                        dataUrl: imgDataUrl,
+                        w: canvas.width,
+                        h: canvas.height
+                    });
                     
-                    if (idx === 0) {
-                        pdfDocOut = new jsPDF({
-                            orientation: w > h ? 'l' : 'p',
-                            unit: 'px',
-                            format: [w, h],
-                            compress: true
-                        });
+                    addLogEntry(`Processed slide ${pageNum + 1} successfully.`, 'info');
+                }
+                
+                progressPercentageDisplay.textContent = '85%';
+                progressBarFill.style.width = '85%';
+                progressStatusTitle.textContent = 'Compiling PDF pages...';
+                progressStatusSub.textContent = 'Arranging slides in grids';
+                addLogEntry(`Compiling ${processedSlides.length} slides (${slidesPerPage} slides/page)...`, 'info');
+                
+                if (slidesPerPage === 1) {
+                    const firstSlide = processedSlides[0];
+                    pdfDocOut = new jsPDF({
+                        orientation: firstSlide.w > firstSlide.h ? 'l' : 'p',
+                        unit: 'px',
+                        format: [firstSlide.w, firstSlide.h],
+                        compress: true
+                    });
+                    
+                    processedSlides.forEach((slide, idx) => {
+                        if (idx > 0) {
+                            pdfDocOut.addPage([slide.w, slide.h], slide.w > slide.h ? 'l' : 'p');
+                        }
+                        pdfDocOut.addImage(slide.dataUrl, 'JPEG', 0, 0, slide.w, slide.h);
+                    });
+                } else {
+                    // Multi-slide grid layouts on A4 paper
+                    const layouts = {
+                        2: { cols: 1, rows: 2, orient: 'p' },
+                        3: { cols: 1, rows: 3, orient: 'p' },
+                        4: { cols: 2, rows: 2, orient: 'p' },
+                        6: { cols: 2, rows: 3, orient: 'p' },
+                        8: { cols: 2, rows: 4, orient: 'p' },
+                        10: { cols: 2, rows: 5, orient: 'p' }
+                    };
+                    const layout = layouts[slidesPerPage] || { cols: 1, rows: 1, orient: 'l' };
+                    const cols = layout.cols;
+                    const rows = layout.rows;
+                    const orient = layout.orient;
+                    
+                    const a4W = Math.round(8.27 * dpi);
+                    const a4H = Math.round(11.69 * dpi);
+                    const pageW = orient === 'l' ? a4H : a4W;
+                    const pageH = orient === 'l' ? a4W : a4H;
+                    
+                    pdfDocOut = new jsPDF({
+                        orientation: orient,
+                        unit: 'px',
+                        format: [pageW, pageH],
+                        compress: true
+                    });
+                    
+                    const marginX = Math.round(0.04 * pageW);
+                    const marginY = Math.round(0.04 * pageH);
+                    const gapX = Math.round(0.02 * pageW);
+                    const gapY = Math.round(0.02 * pageH);
+                    
+                    const usableW = pageW - 2 * marginX - (cols - 1) * gapX;
+                    const usableH = pageH - 2 * marginY - (rows - 1) * gapY;
+                    
+                    const cellW = Math.floor(usableW / cols);
+                    const cellH = Math.floor(usableH / rows);
+                    
+                    const firstSlide = processedSlides[0];
+                    const origAspect = firstSlide.w / firstSlide.h;
+                    const targetAspect = cellW / cellH;
+                    
+                    let fitW, fitH;
+                    if (origAspect > targetAspect) {
+                        fitW = cellW;
+                        fitH = Math.floor(cellW / origAspect);
                     } else {
-                        pdfDocOut.addPage([w, h], w > h ? 'l' : 'p');
+                        fitH = cellH;
+                        fitW = Math.floor(cellH * origAspect);
                     }
                     
-                    pdfDocOut.addImage(imgDataUrl, 'JPEG', 0, 0, w, h);
-                    addLogEntry(`Rendered slide ${pageNum + 1} successfully.`, 'info');
+                    const chunkSize = cols * rows;
+                    let pageIndex = 0;
+                    
+                    for (let i = 0; i < processedSlides.length; i += chunkSize) {
+                        const chunk = processedSlides.slice(i, i + chunkSize);
+                        
+                        if (pageIndex > 0) {
+                            pdfDocOut.addPage([pageW, pageH], orient);
+                        }
+                        
+                        chunk.forEach((slide, idx) => {
+                            const rIdx = Math.floor(idx / cols);
+                            const cIdx = idx % cols;
+                            
+                            const cellX = marginX + cIdx * (cellW + gapX);
+                            const cellY = marginY + rIdx * (cellH + gapY);
+                            
+                            const pasteX = cellX + Math.floor((cellW - fitW) / 2);
+                            const pasteY = cellY + Math.floor((cellH - fitH) / 2);
+                            
+                            pdfDocOut.addImage(slide.dataUrl, 'JPEG', pasteX, pasteY, fitW, fitH);
+                            
+                            // Draw thin guide border
+                            pdfDocOut.setDrawColor(220, 220, 220);
+                            pdfDocOut.setLineWidth(1);
+                            pdfDocOut.rect(pasteX, pasteY, fitW, fitH);
+                        });
+                        
+                        pageIndex++;
+                    }
                 }
                 
                 progressPercentageDisplay.textContent = '95%';
@@ -799,6 +898,7 @@ async function startConversion() {
             intensity: parseInt(colorIntensity.value),
             page_range: pageRangeInput.value.trim(),
             output_name: outputNameInput.value.trim(),
+            slides_per_page: parseInt(slidesSelect.value),
             boxes: pageBoxes
         };
 
@@ -819,7 +919,6 @@ async function startConversion() {
             statusPollInterval = setInterval(pollConversionStatus, 800);
         } catch (err) {
             console.error(err);
-            addLogEntry(`Failed to start task: ${err.message}`, 'error');
         }
     }
 }
