@@ -773,3 +773,73 @@ footer {
     border-top: 1px solid var(--card-border);
     margin-top: auto;
 }
+
+/* Diagram Protection Box Overlay */
+#boxes-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    overflow: hidden;
+}
+
+.diagram-box {
+    position: absolute;
+    border: 2px dashed #ec4899;
+    background: rgba(236, 72, 153, 0.15);
+    cursor: move;
+    box-sizing: border-box;
+}
+
+.diagram-box:hover {
+    background: rgba(236, 72, 153, 0.25);
+    border-color: #f43f5e;
+}
+
+.box-delete-btn {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #ef4444;
+    color: white;
+    border: none;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 15;
+    opacity: 0.8;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.box-delete-btn:hover {
+    opacity: 1;
+    transform: scale(1.1);
+    background: #dc2626;
+}
+
+.box-resize-handle {
+    position: absolute;
+    bottom: -4px;
+    right: -4px;
+    width: 10px;
+    height: 10px;
+    background: #3b82f6;
+    border: 1px solid white;
+    border-radius: 20px;
+    cursor: se-resize;
+    z-index: 12;
+}
+
+.box-resize-handle:hover {
+    background: #2563eb;
+    transform: scale(1.2);
+}
