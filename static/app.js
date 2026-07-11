@@ -285,6 +285,12 @@ function setupSettingsEvents() {
     slideScale.addEventListener('input', (e) => {
         slideScaleVal.textContent = e.target.value + '%';
     });
+    slideScale.addEventListener('change', triggerPreviewRefresh);
+
+    slidesSelect.addEventListener('change', () => {
+        currentPage = 1;
+        triggerPreviewRefresh();
+    });
 }
 
 function triggerPreviewRefresh() {
@@ -373,7 +379,17 @@ function setupPageNavigation() {
     });
 
     nextPageBtn.addEventListener('click', () => {
-        if (currentPage < totalPages) {
+        const slidesPerPage = parseInt(slidesSelect.value);
+        const slideScaleValPct = parseInt(slideScale.value);
+        const isGrid = (slidesPerPage > 1 || slideScaleValPct < 100);
+        const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
+        let maxVal = 1;
+        if (isDrawMode || !isGrid) {
+            maxVal = pages.length;
+        } else {
+            maxVal = Math.ceil(pages.length / slidesPerPage);
+        }
+        if (currentPage < maxVal) {
             currentPage++;
             loadPreview();
         }
@@ -381,10 +397,25 @@ function setupPageNavigation() {
 }
 
 function updatePageControls() {
+    const slidesPerPage = parseInt(slidesSelect.value);
+    const slideScaleValPct = parseInt(slideScale.value);
+    const isGrid = (slidesPerPage > 1 || slideScaleValPct < 100);
+    const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
+    let maxVal = 1;
+    if (isDrawMode || !isGrid) {
+        maxVal = pages.length;
+    } else {
+        maxVal = Math.ceil(pages.length / slidesPerPage);
+    }
+    
+    // Clamp currentPage just in case
+    if (currentPage > maxVal) currentPage = maxVal || 1;
+    if (currentPage < 1) currentPage = 1;
+
     currentPageNumSpan.textContent = currentPage;
-    totalPageNumSpan.textContent = totalPages;
+    totalPageNumSpan.textContent = maxVal || 1;
     prevPageBtn.disabled = (currentPage === 1);
-    nextPageBtn.disabled = (currentPage === totalPages);
+    nextPageBtn.disabled = (currentPage >= maxVal);
 }
 
 // 5. Actions / API Communications
@@ -437,49 +468,183 @@ async function loadLocalMetadata(path) {
 async function loadPreview() {
     showPreviewLoading();
     
+    const slidesPerPage = parseInt(slidesSelect.value);
+    const slideScaleValPct = parseInt(slideScale.value);
+    const dpi = parseInt(dpiSelect.value);
+    const isGrid = (slidesPerPage > 1 || slideScaleValPct < 100);
+    
     if (isClientSideMode) {
-        // Run Client-Side Preview
         try {
-            const pageObj = await clientPdfDoc.getPage(currentPage);
-            
-            // 1. Render Original (1.2 scale)
-            const viewportOrig = pageObj.getViewport({scale: 1.2});
-            const canvasOrig = document.createElement('canvas');
-            canvasOrig.width = viewportOrig.width;
-            canvasOrig.height = viewportOrig.height;
-            const ctxOrig = canvasOrig.getContext('2d');
-            await pageObj.render({canvasContext: ctxOrig, viewport: viewportOrig}).promise;
-            const base64Orig = canvasOrig.toDataURL('image/png');
-            
-            // 2. Render Inverted (at target DPI scale)
-            const scaleDPI = parseInt(dpiSelect.value) / 72.0;
-            const viewportTarget = pageObj.getViewport({scale: scaleDPI});
-            const canvasTarget = document.createElement('canvas');
-            canvasTarget.width = viewportTarget.width;
-            canvasTarget.height = viewportTarget.height;
-            const ctxTarget = canvasTarget.getContext('2d');
-            await pageObj.render({canvasContext: ctxTarget, viewport: viewportTarget}).promise;
-            
-            // 3. Process pixels
-            const imgData = ctxTarget.getImageData(0, 0, canvasTarget.width, canvasTarget.height);
-            invertPixelsClientSide(
-                imgData.data,
-                modeSelect.value,
-                parseInt(bgThreshold.value),
-                parseInt(colorIntensity.value),
-                pageBoxes[currentPage],
-                canvasTarget.width,
-                canvasTarget.height
-            );
-            ctxTarget.putImageData(imgData, 0, 0);
-            const base64Inv = canvasTarget.toDataURL('image/png');
-            
-            // 4. Update elements
-            imgBefore.src = base64Orig;
-            imgAfter.src = base64Inv;
-            
-            showPreviewCompare();
-            updatePageControls();
+            if (isDrawMode || !isGrid) {
+                // Single slide preview
+                const pageObj = await clientPdfDoc.getPage(currentPage);
+                
+                const viewportOrig = pageObj.getViewport({scale: 1.2});
+                const canvasOrig = document.createElement('canvas');
+                canvasOrig.width = viewportOrig.width;
+                canvasOrig.height = viewportOrig.height;
+                const ctxOrig = canvasOrig.getContext('2d');
+                await pageObj.render({canvasContext: ctxOrig, viewport: viewportOrig}).promise;
+                const base64Orig = canvasOrig.toDataURL('image/png');
+                
+                const scaleDPI = dpi / 72.0;
+                const viewportTarget = pageObj.getViewport({scale: scaleDPI});
+                const canvasTarget = document.createElement('canvas');
+                canvasTarget.width = viewportTarget.width;
+                canvasTarget.height = viewportTarget.height;
+                const ctxTarget = canvasTarget.getContext('2d');
+                await pageObj.render({canvasContext: ctxTarget, viewport: viewportTarget}).promise;
+                
+                const imgData = ctxTarget.getImageData(0, 0, canvasTarget.width, canvasTarget.height);
+                invertPixelsClientSide(
+                    imgData.data,
+                    modeSelect.value,
+                    parseInt(bgThreshold.value),
+                    parseInt(colorIntensity.value),
+                    pageBoxes[currentPage],
+                    canvasTarget.width,
+                    canvasTarget.height
+                );
+                ctxTarget.putImageData(imgData, 0, 0);
+                const base64Inv = canvasTarget.toDataURL('image/png');
+                
+                imgBefore.src = base64Orig;
+                imgAfter.src = base64Inv;
+                
+                showPreviewCompare();
+                updatePageControls();
+            } else {
+                // Client-side grid preview on A4 canvas
+                const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
+                const startIndex = (currentPage - 1) * slidesPerPage;
+                const endIndex = Math.min(pages.length, currentPage * slidesPerPage);
+                const sheetPages = pages.slice(startIndex, endIndex);
+                
+                if (sheetPages.length === 0) {
+                    showError("No slides found in the selected range to preview.");
+                    return;
+                }
+                
+                const layouts = {
+                    1: { cols: 1, rows: 1, orient: 'l' },
+                    2: { cols: 1, rows: 2, orient: 'p' },
+                    3: { cols: 1, rows: 3, orient: 'p' },
+                    4: { cols: 2, rows: 2, orient: 'p' },
+                    6: { cols: 2, rows: 3, orient: 'p' },
+                    8: { cols: 2, rows: 4, orient: 'p' },
+                    10: { cols: 2, rows: 5, orient: 'p' }
+                };
+                const layout = layouts[slidesPerPage] || { cols: 1, rows: 1, orient: 'l' };
+                const cols = layout.cols;
+                const rows = layout.rows;
+                const orient = layout.orient;
+                
+                // Render A4 sheet at 100 DPI
+                const a4W = Math.round(8.27 * 100);
+                const a4H = Math.round(11.69 * 100);
+                const pageW = orient === 'l' ? a4H : a4W;
+                const pageH = orient === 'l' ? a4W : a4H;
+                
+                const canvasPageOrig = document.createElement('canvas');
+                canvasPageOrig.width = pageW;
+                canvasPageOrig.height = pageH;
+                const ctxPageOrig = canvasPageOrig.getContext('2d');
+                ctxPageOrig.fillStyle = '#ffffff';
+                ctxPageOrig.fillRect(0, 0, pageW, pageH);
+                
+                const canvasPageInv = document.createElement('canvas');
+                canvasPageInv.width = pageW;
+                canvasPageInv.height = pageH;
+                const ctxPageInv = canvasPageInv.getContext('2d');
+                ctxPageInv.fillStyle = '#ffffff';
+                ctxPageInv.fillRect(0, 0, pageW, pageH);
+                
+                const marginX = Math.round(0.04 * pageW);
+                const marginY = Math.round(0.04 * pageH);
+                const gapX = Math.round(0.02 * pageW);
+                const gapY = Math.round(0.02 * pageH);
+                
+                const usableW = pageW - 2 * marginX - (cols - 1) * gapX;
+                const usableH = pageH - 2 * marginY - (rows - 1) * gapY;
+                
+                const cellW = Math.floor(usableW / cols);
+                const cellH = Math.floor(usableH / rows);
+                
+                let fitW = 0, fitH = 0;
+                let calculatedFit = false;
+                
+                for (let idx = 0; idx < sheetPages.length; idx++) {
+                    const pageNum = sheetPages[idx];
+                    const pageObj = await clientPdfDoc.getPage(pageNum + 1);
+                    
+                    const scaleDPI = 100 / 72.0;
+                    const viewport = pageObj.getViewport({scale: scaleDPI});
+                    
+                    const canvasSlideOrig = document.createElement('canvas');
+                    canvasSlideOrig.width = viewport.width;
+                    canvasSlideOrig.height = viewport.height;
+                    const ctxSlideOrig = canvasSlideOrig.getContext('2d');
+                    await pageObj.render({canvasContext: ctxSlideOrig, viewport: viewport}).promise;
+                    
+                    if (!calculatedFit) {
+                        const origAspect = viewport.width / viewport.height;
+                        const targetAspect = cellW / cellH;
+                        if (origAspect > targetAspect) {
+                            fitW = cellW;
+                            fitH = Math.floor(cellW / origAspect);
+                        } else {
+                            fitH = cellH;
+                            fitW = Math.floor(cellH * origAspect);
+                        }
+                        const scaleFactor = slideScaleValPct / 100.0;
+                        fitW = Math.floor(fitW * scaleFactor);
+                        fitH = Math.floor(fitH * scaleFactor);
+                        calculatedFit = true;
+                    }
+                    
+                    const canvasSlideInv = document.createElement('canvas');
+                    canvasSlideInv.width = viewport.width;
+                    canvasSlideInv.height = viewport.height;
+                    const ctxSlideInv = canvasSlideInv.getContext('2d');
+                    ctxSlideInv.drawImage(canvasSlideOrig, 0, 0);
+                    
+                    const imgData = ctxSlideInv.getImageData(0, 0, viewport.width, viewport.height);
+                    invertPixelsClientSide(
+                        imgData.data,
+                        modeSelect.value,
+                        parseInt(bgThreshold.value),
+                        parseInt(colorIntensity.value),
+                        pageBoxes[pageNum + 1],
+                        viewport.width,
+                        viewport.height
+                    );
+                    ctxSlideInv.putImageData(imgData, 0, 0);
+                    
+                    const rIdx = Math.floor(idx / cols);
+                    const cIdx = idx % cols;
+                    
+                    const cellX = marginX + cIdx * (cellW + gapX);
+                    const cellY = marginY + rIdx * (cellH + gapY);
+                    
+                    const pasteX = cellX + Math.floor((cellW - fitW) / 2);
+                    const pasteY = cellY + Math.floor((cellH - fitH) / 2);
+                    
+                    ctxPageOrig.drawImage(canvasSlideOrig, pasteX, pasteY, fitW, fitH);
+                    ctxPageOrig.strokeStyle = '#dcdcdc';
+                    ctxPageOrig.lineWidth = 1;
+                    ctxPageOrig.strokeRect(pasteX, pasteY, fitW, fitH);
+                    
+                    ctxPageInv.drawImage(canvasSlideInv, pasteX, pasteY, fitW, fitH);
+                    ctxPageInv.strokeStyle = '#dcdcdc';
+                    ctxPageInv.lineWidth = 1;
+                    ctxPageInv.strokeRect(pasteX, pasteY, fitW, fitH);
+                }
+                
+                imgBefore.src = canvasPageOrig.toDataURL('image/png');
+                imgAfter.src = canvasPageInv.toDataURL('image/png');
+                showPreviewCompare();
+                updatePageControls();
+            }
         } catch (err) {
             console.error(err);
             showError("Failed to render page preview inside browser.");
@@ -495,8 +660,15 @@ async function loadPreview() {
             intensity: colorIntensity.value
         });
         
-        if (pageBoxes[currentPage] && pageBoxes[currentPage].length > 0) {
-            params.append('boxes', JSON.stringify(pageBoxes[currentPage]));
+        if (isDrawMode || !isGrid) {
+            if (pageBoxes[currentPage] && pageBoxes[currentPage].length > 0) {
+                params.append('boxes', JSON.stringify({ [currentPage]: pageBoxes[currentPage] }));
+            }
+        } else {
+            params.append('slides_per_page', slidesPerPage);
+            params.append('slide_scale', slideScaleValPct);
+            params.append('page_range', pageRangeInput.value.trim());
+            params.append('boxes', JSON.stringify(pageBoxes));
         }
 
         try {
@@ -1053,18 +1225,46 @@ function setupDrawingEvents() {
     
     drawModeBtn.addEventListener('click', () => {
         isDrawMode = !isDrawMode;
+        
+        const slidesPerPage = parseInt(slidesSelect.value);
+        const slideScaleValPct = parseInt(slideScale.value);
+        const isGrid = (slidesPerPage > 1 || slideScaleValPct < 100);
+        
         if (isDrawMode) {
             drawModeBtn.classList.add('active');
             drawModeBtn.style.background = 'var(--primary)';
             boxesContainer.classList.remove('hidden');
             boxesContainer.style.pointerEvents = 'auto';
-            drawStoredBoxes();
+            
+            if (isGrid) {
+                const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
+                if (pages.length > 0) {
+                    const sheetIndex = currentPage - 1;
+                    const idx = Math.min(pages.length - 1, sheetIndex * slidesPerPage);
+                    currentPage = pages[idx] + 1;
+                }
+            }
         } else {
             drawModeBtn.classList.remove('active');
             drawModeBtn.style.background = '';
             boxesContainer.classList.add('hidden');
             boxesContainer.style.pointerEvents = 'none';
+            
+            if (isGrid) {
+                const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
+                if (pages.length > 0) {
+                    const slideIndex = pages.indexOf(currentPage - 1);
+                    if (slideIndex !== -1) {
+                        currentPage = Math.floor(slideIndex / slidesPerPage) + 1;
+                    } else {
+                        currentPage = 1;
+                    }
+                }
+            }
         }
+        
+        drawStoredBoxes();
+        loadPreview();
     });
     
     clearBoxesBtn.addEventListener('click', () => {
