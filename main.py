@@ -105,22 +105,32 @@ def invert_pixels(arr_np: np.ndarray, mode: str, threshold: int, intensity: int)
         min_c = np.minimum(np.minimum(r, g), b)
         chroma = max_c - min_c
         
-        # Background: inverted grayscale
-        bg_val = 255.0 - max_c
-        bg_val = np.where(bg_val > threshold, 255.0, bg_val)
-        bg_rgb = np.repeat(bg_val[:, :, np.newaxis], 3, axis=2)
+        # 1. Color mask: 1.0 for colored, 0.0 for neutral
+        color_mask = np.clip((chroma - 10.0) / 30.0, 0.0, 1.0)
+        color_mask = color_mask[:, :, np.newaxis]
         
-        # Chroma mask (colored vs. neutral)
-        mask = np.clip((chroma - 15.0) / 25.0, 0.0, 1.0)
-        mask = mask[:, :, np.newaxis]
+        # 2. Inverted Neutral (white text -> black, black background -> white)
+        neutral_inv = 255.0 - arr_np
+        max_neutral = np.maximum(np.maximum(neutral_inv[:,:,0], neutral_inv[:,:,1]), neutral_inv[:,:,2])
+        # Clean background thresholding
+        for i in range(3):
+            neutral_inv[:,:,i] = np.where(max_neutral > threshold, 255.0, neutral_inv[:,:,i])
+            
+        # 3. Color preservation:
+        # Scale original color based on intensity slider (default 110 means scale=1.0, i.e., original color)
+        scale = intensity / 110.0
+        scale = np.minimum(scale, 1.0) # don't brighten beyond original colors
         
-        # Colored text scaling
-        scale = intensity / np.maximum(max_c, 1.0)
-        scale = np.minimum(scale, 1.0)
-        text_rgb = arr_np * scale[:, :, np.newaxis]
+        scaled_arr = arr_np * scale
+        scaled_max_c = max_c * scale
         
-        # Combine
-        smart_arr = (1.0 - mask) * bg_rgb + mask * text_rgb
+        # Background compensation (adds white to background pixels)
+        bg_comp = 255.0 - scaled_max_c
+        color_preserved = scaled_arr + bg_comp[:, :, np.newaxis]
+        color_preserved = np.clip(color_preserved, 0.0, 255.0)
+        
+        # 4. Combine
+        smart_arr = (1.0 - color_mask) * neutral_inv + color_mask * color_preserved
         smart_arr = np.clip(smart_arr, 0.0, 255.0).astype(np.uint8)
         return Image.fromarray(smart_arr)
 
