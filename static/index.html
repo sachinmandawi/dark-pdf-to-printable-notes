@@ -176,6 +176,9 @@
                                 <div class="compare-slider-handle">↔</div>
                             </div>
                             
+                            <!-- Drawing Selection Canvas Overlay -->
+                            <canvas id="selection-canvas" class="hidden" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; cursor: crosshair;"></canvas>
+
                             <!-- Labels -->
                             <span class="compare-label label-before">Dark (Original)</span>
                             <span class="compare-label label-after">White (Inverted)</span>
@@ -231,8 +234,23 @@
 
                 </div>
 
+                <!-- Drawing and Controls panel below preview -->
+                <div class="preview-nav hidden" id="draw-controls-bar" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">
+                        Diagram Protection Box Tool
+                    </span>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button id="draw-mode-btn" class="icon-btn" style="width: auto; padding: 0 1rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 600;" title="Toggle box drawing mode">
+                            🎨 Draw Box
+                        </button>
+                        <button id="clear-boxes-btn" class="icon-btn" style="width: auto; padding: 0 1rem; border-radius: var(--radius-sm); border-color: rgba(239, 68, 68, 0.2); color: var(--error); font-size: 0.8rem; font-weight: 600;" title="Clear drawn boxes" disabled>
+                            🗑️ Clear
+                        </button>
+                    </div>
+                </div>
+
                 <!-- Page Navigation footer inside card -->
-                <div class="preview-nav hidden" id="preview-nav">
+                <div class="preview-nav hidden" id="preview-nav" style="margin-top: 0.5rem;">
                     <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">
                         Slide Comparison Viewer
                     </span>
