@@ -18,6 +18,8 @@ const colorIntensityVal = document.getElementById('color-intensity-val');
 const pageRangeInput = document.getElementById('page-range');
 const outputNameInput = document.getElementById('output-name');
 const slidesSelect = document.getElementById('slides-select');
+const slideScale = document.getElementById('slide-scale');
+const slideScaleVal = document.getElementById('slide-scale-val');
 const convertBtn = document.getElementById('convert-btn');
 
 const previewPlaceholder = document.getElementById('preview-placeholder');
@@ -279,6 +281,10 @@ function setupSettingsEvents() {
         colorIntensityVal.textContent = e.target.value;
     });
     colorIntensity.addEventListener('change', triggerPreviewRefresh);
+
+    slideScale.addEventListener('input', (e) => {
+        slideScaleVal.textContent = e.target.value + '%';
+    });
 }
 
 function triggerPreviewRefresh() {
@@ -710,6 +716,7 @@ async function startConversion() {
                 let pdfDocOut = null;
                 const processedSlides = [];
                 const slidesPerPage = parseInt(slidesSelect.value);
+                const slideScaleValPct = parseInt(slideScale.value);
                 const dpi = parseInt(dpiSelect.value);
                 
                 for (let idx = 0; idx < pages.length; idx++) {
@@ -764,7 +771,7 @@ async function startConversion() {
                 progressStatusSub.textContent = 'Arranging slides in grids';
                 addLogEntry(`Compiling ${processedSlides.length} slides (${slidesPerPage} slides/page)...`, 'info');
                 
-                if (slidesPerPage === 1) {
+                if (slidesPerPage === 1 && slideScaleValPct === 100) {
                     const firstSlide = processedSlides[0];
                     pdfDocOut = new jsPDF({
                         orientation: firstSlide.w > firstSlide.h ? 'l' : 'p',
@@ -780,8 +787,9 @@ async function startConversion() {
                         pdfDocOut.addImage(slide.dataUrl, 'JPEG', 0, 0, slide.w, slide.h);
                     });
                 } else {
-                    // Multi-slide grid layouts on A4 paper
+                    // Grid layouts on A4 paper (1, 2, 3, 4, 6, 8, 10 slides per page)
                     const layouts = {
+                        1: { cols: 1, rows: 1, orient: 'l' },
                         2: { cols: 1, rows: 2, orient: 'p' },
                         3: { cols: 1, rows: 3, orient: 'p' },
                         4: { cols: 2, rows: 2, orient: 'p' },
@@ -829,6 +837,11 @@ async function startConversion() {
                         fitH = cellH;
                         fitW = Math.floor(cellH * origAspect);
                     }
+                    
+                    // Apply slide size scale factor
+                    const scaleFactor = slideScaleValPct / 100.0;
+                    fitW = Math.floor(fitW * scaleFactor);
+                    fitH = Math.floor(fitH * scaleFactor);
                     
                     const chunkSize = cols * rows;
                     let pageIndex = 0;
@@ -900,6 +913,7 @@ async function startConversion() {
             page_range: pageRangeInput.value.trim(),
             output_name: outputNameInput.value.trim(),
             slides_per_page: parseInt(slidesSelect.value),
+            slide_scale: parseInt(slideScale.value),
             boxes: pageBoxes
         };
 
