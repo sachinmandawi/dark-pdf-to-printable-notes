@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dark PDF to Printable Notes Converter - Physics Wallah & Dark Slides</title>
-    <link rel="stylesheet" href="style.css?v=4">
+    <link rel="stylesheet" href="style.css?v=5">
     <!-- PDF.js for rendering PDF pages to canvas client-side -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <!-- jsPDF for compiling processed canvas slides into a new PDF client-side -->
@@ -197,6 +197,11 @@
                                 <div class="compare-slider-handle">↔</div>
                             </div>
                             
+                            <!-- Draw Hint Tooltip -->
+                            <div id="draw-hint-badge" class="hidden" style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px); border: 1px solid rgba(236, 72, 153, 0.3); color: #fff; padding: 6px 14px; border-radius: 30px; font-size: 0.8rem; font-weight: 600; z-index: 20; display: flex; align-items: center; gap: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); pointer-events: none;">
+                                <span style="color: #ec4899; animation: pulse-dot 1.5s infinite;">●</span> Click & drag to draw preservation boxes
+                            </div>
+
                             <!-- Drawing Selection Overlay -->
                             <div id="boxes-container" class="hidden"></div>
 
@@ -253,34 +258,25 @@
                         </div>
                     </div>
 
-                </div>
-
-                <!-- Drawing and Controls panel below preview -->
-                <div class="preview-nav hidden" id="draw-controls-bar" style="margin-top: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">
-                        Diagram Protection Box Tool
-                    </span>
-                    <div style="display: flex; gap: 0.5rem;">
-                        <button id="draw-mode-btn" class="icon-btn" style="width: auto; padding: 0 1rem; border-radius: var(--radius-sm); font-size: 0.8rem; font-weight: 600;" title="Toggle box drawing mode">
+                    <!-- Unified Interactive Preview Controls Dashboard -->
+                <div class="preview-nav hidden" id="preview-nav" style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 0.6rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--card-border); gap: 1rem; flex-wrap: wrap;">
+                    <!-- Left: Page direct entry controls -->
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <button class="icon-btn" id="prev-page-btn" title="Previous Page" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">◀</button>
+                        <span style="font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 0.3rem;">
+                            Slide <input type="number" id="current-page-input" value="1" min="1" style="width: 55px; text-align: center; background: rgba(0,0,0,0.3); border: 1px solid var(--card-border); border-radius: var(--radius-sm); color: #fff; padding: 3px 6px; font-weight: 600; font-size: 0.85rem; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--card-border)'"> of <span id="total-page-num">1</span>
+                        </span>
+                        <button class="icon-btn" id="next-page-btn" title="Next Page" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">▶</button>
+                    </div>
+                    
+                    <!-- Right: Drawing and preservation action buttons -->
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <button id="draw-mode-btn" class="icon-btn" style="width: auto; height: 36px; padding: 0 1.2rem; border-radius: var(--radius-sm); font-size: 0.85rem; font-weight: 600; background: var(--primary); color: #fff; border: none; display: inline-flex; align-items: center; gap: 0.4rem;" title="Toggle box drawing mode">
                             🎨 Draw Box
                         </button>
-                        <button id="clear-boxes-btn" class="icon-btn" style="width: auto; padding: 0 1rem; border-radius: var(--radius-sm); border-color: rgba(239, 68, 68, 0.2); color: var(--error); font-size: 0.8rem; font-weight: 600;" title="Clear drawn boxes" disabled>
+                        <button id="clear-boxes-btn" class="icon-btn" style="width: auto; height: 36px; padding: 0 1rem; border-radius: var(--radius-sm); border-color: rgba(239, 68, 68, 0.2); color: var(--error); font-size: 0.85rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem;" title="Clear drawn boxes" disabled>
                             🗑️ Clear
                         </button>
-                    </div>
-                </div>
-
-                <!-- Page Navigation footer inside card -->
-                <div class="preview-nav hidden" id="preview-nav" style="margin-top: 0.5rem;">
-                    <span style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;">
-                        Slide Comparison Viewer
-                    </span>
-                    <div class="page-controls">
-                        <button class="icon-btn" id="prev-page-btn" title="Previous page">◀</button>
-                        <span class="page-num-display">
-                            Page <span id="current-page-num">1</span> of <span id="total-page-num">1</span>
-                        </span>
-                        <button class="icon-btn" id="next-page-btn" title="Next page">▶</button>
                     </div>
                 </div>
             </div>
@@ -291,6 +287,6 @@
         <p>Physics Wallah Dark PDF Notes to Printable PDF Background Converter &copy; 2026 | Built for NEET / JEE Aspirants</p>
     </footer>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
 </body>
 </html>
