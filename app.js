@@ -427,6 +427,7 @@ async function loadLocalMetadata(path) {
         showError('Invalid file path or error reading file metadata.');
         resetFileSelection();
     }
+}
 async function loadPreview() {
     showPreviewLoading();
     
