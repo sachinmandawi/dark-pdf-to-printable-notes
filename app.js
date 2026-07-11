@@ -722,6 +722,8 @@ function showError(msg) {
 }
 
 function invertPixelsClientSide(data, mode, threshold, intensity, boxes, w, h) {
+    w = Math.round(w);
+    h = Math.round(h);
     let hasBoxes = boxes && boxes.length > 0;
     
     for (let i = 0; i < data.length; i += 4) {
