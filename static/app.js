@@ -46,6 +46,11 @@ const openFileBtn = document.getElementById('open-file-btn');
 const openFolderBtn = document.getElementById('open-folder-btn');
 const backToPreviewBtn = document.getElementById('back-to-preview-btn');
 
+// Configure PDF.js worker
+if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+}
+
 // App State
 let currentFile = null;          // File object if uploaded
 let currentFilePath = null;      // Path string if loaded locally
@@ -55,14 +60,50 @@ let activeTaskId = null;
 let statusPollInterval = null;
 let sliderPositionPercent = 50;  // Initial slider pos
 
+let isClientSideMode = false;    // Detects if running client-side-only (e.g. GitHub Pages)
+let clientPdfDoc = null;         // PDF.js document object
+let clientFileBytes = null;      // ArrayBuffer of PDF
+let clientPdfBlob = null;        // Blob representing final compiled PDF
+
 // Initialize Event Listeners
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    await detectMode();
     setupUploadEvents();
     setupSettingsEvents();
     setupSliderEvents();
     setupPageNavigation();
     setupActionButtons();
 });
+
+// 0. Detect whether running locally with FastAPI server, or on static hosting (Browser-Only mode)
+async function detectMode() {
+    // If hostname is not localhost, default to browser mode (since cloud cannot access local filesystem)
+    if (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost') {
+        try {
+            // Attempt to ping local server API
+            const response = await fetch('/api/metadata?path=test');
+            isClientSideMode = false;
+            console.log("FastAPI local server detected. Running in Full Integration Mode.");
+        } catch (e) {
+            isClientSideMode = true;
+            console.log("FastAPI backend offline. Switching to Browser-Only Mode.");
+        }
+    } else {
+        isClientSideMode = true;
+        console.log("Running in Browser-Only Mode (Static Host/GitHub Pages).");
+    }
+
+    // Adjust UI elements for Browser-Only mode
+    if (isClientSideMode) {
+        const divider = document.querySelector('.divider');
+        const localPathGroup = document.querySelector('.input-group');
+        if (divider) divider.classList.add('hidden');
+        if (localPathGroup) localPathGroup.classList.add('hidden');
+        
+        openFolderBtn.classList.add('hidden');
+        openFileBtn.innerHTML = '📥 Download Converted PDF';
+    }
+}
 
 // 1. Upload & Path Selection Handlers
 function setupUploadEvents() {
@@ -107,7 +148,7 @@ function handleFileSelect(file) {
     resetFileSelection();
     currentFile = file;
     infoName.textContent = file.name;
-    infoMeta.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB | Reading...`;
+    infoMeta.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB | Loading...`;
     fileInfoContainer.classList.remove('hidden');
     
     // Auto populate output file name
@@ -115,8 +156,28 @@ function handleFileSelect(file) {
     const baseName = dotIdx !== -1 ? file.name.substring(0, dotIdx) : file.name;
     outputNameInput.value = `${baseName}_printable.pdf`;
 
-    // Upload the file to server cache first to get preview
-    uploadFileToServer(file);
+    if (isClientSideMode) {
+        // Read file local bytes to process inside browser
+        const reader = new FileReader();
+        reader.onload = async function() {
+            clientFileBytes = this.result;
+            const typedarray = new Uint8Array(clientFileBytes);
+            try {
+                clientPdfDoc = await pdfjsLib.getDocument({data: typedarray}).promise;
+                totalPages = clientPdfDoc.numPages;
+                infoMeta.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB | ${totalPages} Pages (Browser-Only Mode)`;
+                convertBtn.disabled = false;
+                loadPreview();
+            } catch (err) {
+                console.error(err);
+                showError("Failed to parse PDF file inside your browser.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    } else {
+        // Upload the file to local server cache
+        uploadFileToServer(file);
+    }
 }
 
 function handleLocalPathSelect(path) {
@@ -145,6 +206,10 @@ function resetFileSelection() {
     outputNameInput.value = '';
     fileInfoContainer.classList.add('hidden');
     convertBtn.disabled = true;
+    
+    clientPdfDoc = null;
+    clientFileBytes = null;
+    clientPdfBlob = null;
     
     // Reset view states
     previewPlaceholder.classList.remove('hidden');
@@ -299,7 +364,7 @@ async function uploadFileToServer(file) {
         loadPreview();
     } catch (err) {
         console.error(err);
-        showError('Failed to load PDF file.');
+        showError('Failed to upload PDF file to server.');
         resetFileSelection();
     }
 }
@@ -326,28 +391,75 @@ async function loadLocalMetadata(path) {
 async function loadPreview() {
     showPreviewLoading();
     
-    const params = new URLSearchParams({
-        filepath: currentFilePath,
-        page: currentPage,
-        mode: modeSelect.value,
-        dpi: dpiSelect.value,
-        threshold: bgThreshold.value,
-        intensity: colorIntensity.value
-    });
+    if (isClientSideMode) {
+        // Run Client-Side Preview
+        try {
+            const pageObj = await clientPdfDoc.getPage(currentPage);
+            
+            // 1. Render Original (1.2 scale)
+            const viewportOrig = pageObj.getViewport({scale: 1.2});
+            const canvasOrig = document.createElement('canvas');
+            canvasOrig.width = viewportOrig.width;
+            canvasOrig.height = viewportOrig.height;
+            const ctxOrig = canvasOrig.getContext('2d');
+            await pageObj.render({canvasContext: ctxOrig, viewport: viewportOrig}).promise;
+            const base64Orig = canvasOrig.toDataURL('image/png');
+            
+            // 2. Render Inverted (at target DPI scale)
+            const scaleDPI = parseInt(dpiSelect.value) / 72.0;
+            const viewportTarget = pageObj.getViewport({scale: scaleDPI});
+            const canvasTarget = document.createElement('canvas');
+            canvasTarget.width = viewportTarget.width;
+            canvasTarget.height = viewportTarget.height;
+            const ctxTarget = canvasTarget.getContext('2d');
+            await pageObj.render({canvasContext: ctxTarget, viewport: viewportTarget}).promise;
+            
+            // 3. Process pixels
+            const imgData = ctxTarget.getImageData(0, 0, canvasTarget.width, canvasTarget.height);
+            invertPixelsClientSide(
+                imgData.data,
+                modeSelect.value,
+                parseInt(bgThreshold.value),
+                parseInt(colorIntensity.value)
+            );
+            ctxTarget.putImageData(imgData, 0, 0);
+            const base64Inv = canvasTarget.toDataURL('image/png');
+            
+            // 4. Update elements
+            imgBefore.src = base64Orig;
+            imgAfter.src = base64Inv;
+            
+            showPreviewCompare();
+            updatePageControls();
+        } catch (err) {
+            console.error(err);
+            showError("Failed to render page preview inside browser.");
+        }
+    } else {
+        // Run Server-Side Preview
+        const params = new URLSearchParams({
+            filepath: currentFilePath,
+            page: currentPage,
+            mode: modeSelect.value,
+            dpi: dpiSelect.value,
+            threshold: bgThreshold.value,
+            intensity: colorIntensity.value
+        });
 
-    try {
-        const response = await fetch(`/api/preview?${params.toString()}`);
-        if (!response.ok) throw new Error('Failed to fetch preview');
-        const data = await response.json();
-        
-        imgBefore.src = `data:image/png;base64,${data.before}`;
-        imgAfter.src = `data:image/png;base64,${data.after}`;
-        
-        showPreviewCompare();
-        updatePageControls();
-    } catch (err) {
-        console.error(err);
-        showError('Error rendering page preview.');
+        try {
+            const response = await fetch(`/api/preview?${params.toString()}`);
+            if (!response.ok) throw new Error('Failed to fetch preview');
+            const data = await response.json();
+            
+            imgBefore.src = `data:image/png;base64,${data.before}`;
+            imgAfter.src = `data:image/png;base64,${data.after}`;
+            
+            showPreviewCompare();
+            updatePageControls();
+        } catch (err) {
+            console.error(err);
+            showError('Error rendering page preview from server.');
+        }
     }
 }
 
@@ -373,6 +485,60 @@ function showError(msg) {
     alert(msg);
 }
 
+// Pixel Processing Engine (JavaScript port of NumPy operations)
+function invertPixelsClientSide(data, mode, threshold, intensity) {
+    for (let i = 0; i < data.length; i += 4) {
+        let r = data[i];
+        let g = data[i+1];
+        let b = data[i+2];
+        
+        let max_c = Math.max(r, g, b);
+        
+        if (mode === 'grayscale') {
+            let y = 0.299 * r + 0.587 * g + 0.114 * b;
+            let inverted_y = 255.0 - y;
+            if (inverted_y > threshold) {
+                inverted_y = 255.0;
+            }
+            let scale = intensity / 110.0;
+            inverted_y = Math.max(0, Math.min(255, inverted_y * scale));
+            
+            data[i] = inverted_y;
+            data[i+1] = inverted_y;
+            data[i+2] = inverted_y;
+        } else if (mode === 'simple') {
+            data[i] = 255 - r;
+            data[i+1] = 255 - g;
+            data[i+2] = 255 - b;
+        } else { // smart mode
+            let min_c = Math.min(r, g, b);
+            let chroma = max_c - min_c;
+            
+            let bg_val = 255.0 - max_c;
+            if (bg_val > threshold) {
+                bg_val = 255.0;
+            }
+            
+            // Chroma blend mask (15 to 40)
+            let mask = (chroma - 15.0) / 25.0;
+            if (mask < 0) mask = 0;
+            if (mask > 1) mask = 1;
+            
+            // Scale text brightness
+            let scale = intensity / Math.max(max_c, 1);
+            if (scale > 1) scale = 1;
+            
+            let text_r = r * scale;
+            let text_g = g * scale;
+            let text_b = b * scale;
+            
+            data[i] = Math.max(0, Math.min(255, (1.0 - mask) * bg_val + mask * text_r));
+            data[i+1] = Math.max(0, Math.min(255, (1.0 - mask) * bg_val + mask * text_g));
+            data[i+2] = Math.max(0, Math.min(255, (1.0 - mask) * bg_val + mask * text_b));
+        }
+    }
+}
+
 // 6. Conversion Handlers
 function setupActionButtons() {
     convertBtn.addEventListener('click', startConversion);
@@ -384,60 +550,190 @@ function setupActionButtons() {
     });
 
     openFileBtn.addEventListener('click', () => {
-        if (currentFilePath) {
+        if (isClientSideMode) {
+            triggerClientSideDownload();
+        } else {
             openConvertedFile();
         }
     });
 
     openFolderBtn.addEventListener('click', () => {
-        if (currentFilePath) {
+        if (!isClientSideMode) {
             openOutputFolder();
         }
     });
 }
 
-async function startConversion() {
-    if (!currentFilePath) return;
+// Parse Page Range String Client-Side
+function parsePageRangeClient(rangeStr, maxPages) {
+    if (!rangeStr || rangeStr.trim().toLowerCase() === 'all') {
+        return Array.from({length: maxPages}, (_, i) => i);
+    }
+    
+    const pages = new Set();
+    const parts = rangeStr.split(',');
+    
+    parts.forEach(part => {
+        part = part.trim();
+        if (part.includes('-')) {
+            const [start, end] = part.split('-');
+            const sVal = parseInt(start.trim());
+            const eVal = parseInt(end.trim());
+            for (let p = sVal; p <= eVal; p++) {
+                if (p >= 1 && p <= maxPages) {
+                    pages.add(p - 1);
+                }
+            }
+        } else {
+            const p = parseInt(part);
+            if (p >= 1 && p <= maxPages) {
+                pages.add(p - 1);
+            }
+        }
+    });
+    
+    return Array.from(pages).sort((a, b) => a - b);
+}
 
+async function startConversion() {
     // Reset progress UI
     progressPercentageDisplay.textContent = '0%';
     progressBarFill.style.width = '0%';
     statusLog.innerHTML = '';
-    addLogEntry('Initiating PDF background conversion...', 'info');
-
-    // Show Progress panel
+    
     compareContainer.classList.add('hidden');
     previewNav.classList.add('hidden');
     conversionProgressBox.classList.remove('hidden');
 
-    const params = {
-        filepath: currentFilePath,
-        mode: modeSelect.value,
-        dpi: dpiSelect.value,
-        threshold: parseInt(bgThreshold.value),
-        intensity: parseInt(colorIntensity.value),
-        page_range: pageRangeInput.value.trim(),
-        output_name: outputNameInput.value.trim()
-    };
-
-    try {
-        const response = await fetch('/api/convert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(params)
-        });
-
-        if (!response.ok) throw new Error('Failed to start conversion');
-        const data = await response.json();
+    if (isClientSideMode) {
+        // Run Client-Side Conversion
+        addLogEntry('Initiating browser-only background conversion (no server)...', 'info');
         
-        activeTaskId = data.task_id;
-        addLogEntry(`Task created with ID: ${activeTaskId}`, 'info');
+        const pages = parsePageRangeClient(pageRangeInput.value, totalPages);
+        if (pages.length === 0) {
+            addLogEntry('Error: Page range is invalid or matched 0 pages.', 'error');
+            progressStatusTitle.textContent = 'Conversion Failed';
+            return;
+        }
+
+        addLogEntry(`Selected pages to convert: ${pages.map(p => p+1).join(', ')}`, 'info');
         
-        // Start polling
-        statusPollInterval = setInterval(pollConversionStatus, 800);
-    } catch (err) {
-        console.error(err);
-        addLogEntry(`Failed to start task: ${err.message}`, 'error');
+        // Spawn async processor
+        setTimeout(async () => {
+            try {
+                const { jsPDF } = window.jspdf;
+                let pdfDocOut = null;
+                
+                for (let idx = 0; idx < pages.length; idx++) {
+                    const pageNum = pages[idx];
+                    
+                    // Update UI
+                    const pct = Math.round((idx / pages.length) * 90);
+                    progressPercentageDisplay.textContent = `${pct}%`;
+                    progressBarFill.style.width = `${pct}%`;
+                    progressStatusTitle.textContent = `Processing page ${pageNum + 1}...`;
+                    progressStatusSub.textContent = `Slide ${idx + 1} of ${pages.length}`;
+                    
+                    addLogEntry(`Rendering page ${pageNum + 1}...`, 'info');
+                    
+                    const pageObj = await clientPdfDoc.getPage(pageNum + 1);
+                    const scaleDPI = parseInt(dpiSelect.value) / 72.0;
+                    const viewport = pageObj.getViewport({scale: scaleDPI});
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    const ctx = canvas.getContext('2d');
+                    await pageObj.render({canvasContext: ctx, viewport: viewport}).promise;
+                    
+                    // Process Inversion
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    invertPixelsClientSide(
+                        imgData.data,
+                        modeSelect.value,
+                        parseInt(bgThreshold.value),
+                        parseInt(colorIntensity.value)
+                    );
+                    ctx.putImageData(imgData, 0, 0);
+                    
+                    // Compress to JPEG
+                    const imgDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                    const w = canvas.width;
+                    const h = canvas.height;
+                    
+                    if (idx === 0) {
+                        pdfDocOut = new jsPDF({
+                            orientation: w > h ? 'l' : 'p',
+                            unit: 'px',
+                            format: [w, h],
+                            compress: true
+                        });
+                    } else {
+                        pdfDocOut.addPage([w, h], w > h ? 'l' : 'p');
+                    }
+                    
+                    pdfDocOut.addImage(imgDataUrl, 'JPEG', 0, 0, w, h);
+                    addLogEntry(`Rendered slide ${pageNum + 1} successfully.`, 'info');
+                }
+                
+                progressPercentageDisplay.textContent = '95%';
+                progressBarFill.style.width = '95%';
+                progressStatusTitle.textContent = 'Compiling PDF document...';
+                addLogEntry('Encoding pages to printable PDF format...', 'info');
+                
+                // Save bytes locally
+                clientPdfBlob = pdfDocOut.output('blob');
+                
+                progressPercentageDisplay.textContent = '100%';
+                progressBarFill.style.width = '100%';
+                progressStatusTitle.textContent = 'Done!';
+                progressStatusSub.textContent = 'Conversion successful';
+                addLogEntry('PDF notes generated successfully!', 'success');
+                
+                // Automatically download file on completion
+                triggerClientSideDownload();
+                
+                setTimeout(showCompletedState, 300);
+            } catch (err) {
+                console.error(err);
+                addLogEntry(`Browser error during conversion: ${err.message}`, 'error');
+                progressStatusTitle.textContent = 'Conversion Failed';
+            }
+        }, 100);
+
+    } else {
+        // Run Server-Side Conversion
+        addLogEntry('Initiating PDF background conversion on local server...', 'info');
+        
+        const params = {
+            filepath: currentFilePath,
+            mode: modeSelect.value,
+            dpi: dpiSelect.value,
+            threshold: parseInt(bgThreshold.value),
+            intensity: parseInt(colorIntensity.value),
+            page_range: pageRangeInput.value.trim(),
+            output_name: outputNameInput.value.trim()
+        };
+
+        try {
+            const response = await fetch('/api/convert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            });
+
+            if (!response.ok) throw new Error('Failed to start conversion');
+            const data = await response.json();
+            
+            activeTaskId = data.task_id;
+            addLogEntry(`Task created with ID: ${activeTaskId}`, 'info');
+            
+            // Start polling
+            statusPollInterval = setInterval(pollConversionStatus, 800);
+        } catch (err) {
+            console.error(err);
+            addLogEntry(`Failed to start task: ${err.message}`, 'error');
+        }
     }
 }
 
@@ -488,27 +784,45 @@ function addLogEntry(text, level = 'info') {
 }
 
 async function cancelConversion() {
-    if (!activeTaskId) return;
-
-    try {
-        const response = await fetch(`/api/cancel/${activeTaskId}`, { method: 'POST' });
-        if (response.ok) {
-            clearInterval(statusPollInterval);
-            addLogEntry('Task cancelled by user.', 'warning');
-            progressStatusTitle.textContent = 'Conversion Cancelled';
-            setTimeout(() => {
-                conversionProgressBox.classList.add('hidden');
-                showPreviewCompare();
-            }, 1500);
+    if (isClientSideMode) {
+        // Just reload preview page
+        conversionProgressBox.classList.add('hidden');
+        showPreviewCompare();
+    } else {
+        if (!activeTaskId) return;
+        try {
+            const response = await fetch(`/api/cancel/${activeTaskId}`, { method: 'POST' });
+            if (response.ok) {
+                clearInterval(statusPollInterval);
+                addLogEntry('Task cancelled by user.', 'warning');
+                progressStatusTitle.textContent = 'Conversion Cancelled';
+                setTimeout(() => {
+                    conversionProgressBox.classList.add('hidden');
+                    showPreviewCompare();
+                }, 1500);
+            }
+        } catch (err) {
+            console.error(err);
         }
-    } catch (err) {
-        console.error(err);
     }
 }
 
 function showCompletedState() {
     conversionProgressBox.classList.add('hidden');
     conversionCompletedBox.classList.remove('hidden');
+}
+
+function triggerClientSideDownload() {
+    if (!clientPdfBlob) return;
+    
+    const outputName = outputNameInput.value.trim() || 'notes_printable.pdf';
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(clientPdfBlob);
+    link.download = outputName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    addLogEntry(`Downloaded compiled file: ${outputName}`, 'success');
 }
 
 async function openConvertedFile() {
