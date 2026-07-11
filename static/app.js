@@ -511,8 +511,8 @@ async function loadPreview() {
                     parseInt(bgThreshold.value),
                     parseInt(colorIntensity.value),
                     pageBoxes[currentPage],
-                    canvasTarget.width,
-                    canvasTarget.height
+                    imgData.width,
+                    imgData.height
                 );
                 ctxTarget.putImageData(imgData, 0, 0);
                 const base64Inv = canvasTarget.toDataURL('image/png');
@@ -624,8 +624,8 @@ async function loadPreview() {
                         parseInt(bgThreshold.value),
                         parseInt(colorIntensity.value),
                         pageBoxes[pageNum + 1],
-                        viewport.width,
-                        viewport.height
+                        imgData.width,
+                        imgData.height
                     );
                     ctxSlideInv.putImageData(imgData, 0, 0);
                     
@@ -932,8 +932,8 @@ async function startConversion() {
                         parseInt(bgThreshold.value),
                         parseInt(colorIntensity.value),
                         pageBoxes[pageNum + 1],
-                        canvas.width,
-                        canvas.height
+                        imgData.width,
+                        imgData.height
                     );
                     ctx.putImageData(imgData, 0, 0);
                     
