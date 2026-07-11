@@ -46,6 +46,12 @@ const openFileBtn = document.getElementById('open-file-btn');
 const openFolderBtn = document.getElementById('open-folder-btn');
 const backToPreviewBtn = document.getElementById('back-to-preview-btn');
 
+// Drawing Canvas Elements
+const selectionCanvas = document.getElementById('selection-canvas');
+const drawModeBtn = document.getElementById('draw-mode-btn');
+const clearBoxesBtn = document.getElementById('clear-boxes-btn');
+const drawControlsBar = document.getElementById('draw-controls-bar');
+
 // Configure PDF.js worker
 if (typeof pdfjsLib !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
@@ -65,6 +71,13 @@ let clientPdfDoc = null;         // PDF.js document object
 let clientFileBytes = null;      // ArrayBuffer of PDF
 let clientPdfBlob = null;        // Blob representing final compiled PDF
 
+// Drawing Selection State
+let isDrawMode = false;
+let pageBoxes = {}; // pageNumber (1-based) -> Array of [x1, y1, x2, y2] percentages
+let isDrawingBox = false;
+let drawStart = { x: 0, y: 0 };
+let currentDrawingBox = null;
+
 // Initialize Event Listeners
 document.addEventListener('DOMContentLoaded', async () => {
     await detectMode();
@@ -72,6 +85,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupSettingsEvents();
     setupSliderEvents();
     setupPageNavigation();
+    setupDrawingEvents(); // Initialize drawing overlay
     setupActionButtons();
 });
 
@@ -211,6 +225,25 @@ function resetFileSelection() {
     clientFileBytes = null;
     clientPdfBlob = null;
     
+    // Clear boxes state
+    pageBoxes = {};
+    isDrawMode = false;
+    if (drawModeBtn) {
+        drawModeBtn.classList.remove('active');
+        drawModeBtn.style.background = '';
+    }
+    if (selectionCanvas) {
+        selectionCanvas.classList.add('hidden');
+        const ctx = selectionCanvas.getContext('2d');
+        ctx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+    }
+    if (clearBoxesBtn) {
+        clearBoxesBtn.disabled = true;
+    }
+    if (drawControlsBar) {
+        drawControlsBar.classList.add('hidden');
+    }
+    
     // Reset view states
     previewPlaceholder.classList.remove('hidden');
     previewLoading.classList.add('hidden');
@@ -314,6 +347,13 @@ function syncSliderDimensions() {
     // Maintain slider percentage
     imgBeforeWrapper.style.width = sliderPositionPercent + '%';
     sliderBar.style.left = sliderPositionPercent + '%';
+    
+    // Sync selection canvas size
+    if (selectionCanvas) {
+        selectionCanvas.width = w;
+        selectionCanvas.height = h;
+        drawStoredBoxes();
+    }
 }
 
 // 4. Page Navigation
@@ -386,8 +426,6 @@ async function loadLocalMetadata(path) {
         showError('Invalid file path or error reading file metadata.');
         resetFileSelection();
     }
-}
-
 async function loadPreview() {
     showPreviewLoading();
     
@@ -420,7 +458,10 @@ async function loadPreview() {
                 imgData.data,
                 modeSelect.value,
                 parseInt(bgThreshold.value),
-                parseInt(colorIntensity.value)
+                parseInt(colorIntensity.value),
+                pageBoxes[currentPage],
+                canvasTarget.width,
+                canvasTarget.height
             );
             ctxTarget.putImageData(imgData, 0, 0);
             const base64Inv = canvasTarget.toDataURL('image/png');
@@ -445,6 +486,10 @@ async function loadPreview() {
             threshold: bgThreshold.value,
             intensity: colorIntensity.value
         });
+        
+        if (pageBoxes[currentPage] && pageBoxes[currentPage].length > 0) {
+            params.append('boxes', JSON.stringify(pageBoxes[currentPage]));
+        }
 
         try {
             const response = await fetch(`/api/preview?${params.toString()}`);
@@ -468,6 +513,7 @@ function showPreviewLoading() {
     previewLoading.classList.remove('hidden');
     compareContainer.classList.add('hidden');
     previewNav.classList.add('hidden');
+    if (drawControlsBar) drawControlsBar.classList.add('hidden');
     conversionProgressBox.classList.add('hidden');
     conversionCompletedBox.classList.add('hidden');
 }
@@ -476,6 +522,7 @@ function showPreviewCompare() {
     previewLoading.classList.add('hidden');
     compareContainer.classList.remove('hidden');
     previewNav.classList.remove('hidden');
+    if (drawControlsBar) drawControlsBar.classList.remove('hidden');
     
     // Sync slider layouts
     setTimeout(syncSliderDimensions, 50);
@@ -485,8 +532,31 @@ function showError(msg) {
     alert(msg);
 }
 
-function invertPixelsClientSide(data, mode, threshold, intensity) {
+function invertPixelsClientSide(data, mode, threshold, intensity, boxes, w, h) {
+    let hasBoxes = boxes && boxes.length > 0;
+    
     for (let i = 0; i < data.length; i += 4) {
+        let pixelIndex = i / 4;
+        let px = pixelIndex % w;
+        let py = Math.floor(pixelIndex / w);
+        let pxPct = px / w * 100.0;
+        let pyPct = py / h * 100.0;
+        
+        let insideBox = false;
+        if (hasBoxes) {
+            for (let b = 0; b < boxes.length; b++) {
+                let box = boxes[b];
+                if (pxPct >= box[0] && pxPct <= box[2] && pyPct >= box[1] && pyPct <= box[3]) {
+                    insideBox = true;
+                    break;
+                }
+            }
+        }
+        
+        if (insideBox) {
+            continue; // Skip processing to preserve original diagram color
+        }
+
         let r = data[i];
         let g = data[i+1];
         let b = data[i+2];
@@ -530,7 +600,6 @@ function invertPixelsClientSide(data, mode, threshold, intensity) {
             }
             
             // 3. Color preservation:
-            // Scale original color based on intensity slider (default 110 means scale=1.0)
             let scale = intensity / 110.0;
             if (scale > 1) scale = 1.0;
             
@@ -666,7 +735,10 @@ async function startConversion() {
                         imgData.data,
                         modeSelect.value,
                         parseInt(bgThreshold.value),
-                        parseInt(colorIntensity.value)
+                        parseInt(colorIntensity.value),
+                        pageBoxes[pageNum + 1],
+                        canvas.width,
+                        canvas.height
                     );
                     ctx.putImageData(imgData, 0, 0);
                     
@@ -726,7 +798,8 @@ async function startConversion() {
             threshold: parseInt(bgThreshold.value),
             intensity: parseInt(colorIntensity.value),
             page_range: pageRangeInput.value.trim(),
-            output_name: outputNameInput.value.trim()
+            output_name: outputNameInput.value.trim(),
+            boxes: pageBoxes
         };
 
         try {
@@ -858,4 +931,120 @@ async function openOutputFolder() {
     } catch (err) {
         alert('Could not open folder directly on your system.');
     }
+}
+
+// 7. Drawing Canvas Helper Functions
+function setupDrawingEvents() {
+    if (!selectionCanvas || !drawModeBtn || !clearBoxesBtn) return;
+    
+    drawModeBtn.addEventListener('click', () => {
+        isDrawMode = !isDrawMode;
+        if (isDrawMode) {
+            drawModeBtn.classList.add('active');
+            drawModeBtn.style.background = 'var(--primary)';
+            selectionCanvas.classList.remove('hidden');
+            drawStoredBoxes();
+        } else {
+            drawModeBtn.classList.remove('active');
+            drawModeBtn.style.background = '';
+            selectionCanvas.classList.add('hidden');
+        }
+    });
+    
+    clearBoxesBtn.addEventListener('click', () => {
+        pageBoxes[currentPage] = [];
+        drawStoredBoxes();
+        loadPreview();
+    });
+    
+    selectionCanvas.addEventListener('mousedown', (e) => {
+        if (!isDrawMode) return;
+        isDrawingBox = true;
+        const rect = selectionCanvas.getBoundingClientRect();
+        drawStart.x = (e.clientX - rect.left) / rect.width * 100.0;
+        drawStart.y = (e.clientY - rect.top) / rect.height * 100.0;
+        currentDrawingBox = [drawStart.x, drawStart.y, drawStart.x, drawStart.y];
+    });
+
+    selectionCanvas.addEventListener('mousemove', (e) => {
+        if (!isDrawingBox) return;
+        const rect = selectionCanvas.getBoundingClientRect();
+        const curX = (e.clientX - rect.left) / rect.width * 100.0;
+        const curY = (e.clientY - rect.top) / rect.height * 100.0;
+        
+        currentDrawingBox = [
+            Math.min(drawStart.x, curX),
+            Math.min(drawStart.y, curY),
+            Math.max(drawStart.x, curX),
+            Math.max(drawStart.y, curY)
+        ];
+        
+        // Redraw
+        const ctx = selectionCanvas.getContext('2d');
+        ctx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+        
+        // Draw stored boxes
+        const boxes = pageBoxes[currentPage] || [];
+        ctx.strokeStyle = 'rgba(236, 72, 153, 0.8)';
+        ctx.fillStyle = 'rgba(236, 72, 153, 0.2)';
+        ctx.lineWidth = 2;
+        boxes.forEach(box => {
+            const x1 = box[0] * selectionCanvas.width / 100.0;
+            const y1 = box[1] * selectionCanvas.height / 100.0;
+            const w = (box[2] - box[0]) * selectionCanvas.width / 100.0;
+            const h = (box[3] - box[1]) * selectionCanvas.height / 100.0;
+            ctx.fillRect(x1, y1, w, h);
+            ctx.strokeRect(x1, y1, w, h);
+        });
+        
+        // Draw active drawing box
+        if (currentDrawingBox) {
+            ctx.strokeStyle = 'rgba(59, 130, 246, 0.8)';
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.2)';
+            const x1 = currentDrawingBox[0] * selectionCanvas.width / 100.0;
+            const y1 = currentDrawingBox[1] * selectionCanvas.height / 100.0;
+            const w = (currentDrawingBox[2] - currentDrawingBox[0]) * selectionCanvas.width / 100.0;
+            const h = (currentDrawingBox[3] - currentDrawingBox[1]) * selectionCanvas.height / 100.0;
+            ctx.fillRect(x1, y1, w, h);
+            ctx.strokeRect(x1, y1, w, h);
+        }
+    });
+
+    selectionCanvas.addEventListener('mouseup', () => {
+        if (!isDrawingBox) return;
+        isDrawingBox = false;
+        if (currentDrawingBox) {
+            const w = currentDrawingBox[2] - currentDrawingBox[0];
+            const h = currentDrawingBox[3] - currentDrawingBox[1];
+            if (w > 1.0 && h > 1.0) {
+                if (!pageBoxes[currentPage]) pageBoxes[currentPage] = [];
+                pageBoxes[currentPage].push(currentDrawingBox);
+            }
+        }
+        currentDrawingBox = null;
+        drawStoredBoxes();
+        loadPreview();
+    });
+}
+
+function drawStoredBoxes() {
+    if (!selectionCanvas || !clearBoxesBtn) return;
+    const ctx = selectionCanvas.getContext('2d');
+    ctx.clearRect(0, 0, selectionCanvas.width, selectionCanvas.height);
+    
+    const boxes = pageBoxes[currentPage] || [];
+    ctx.strokeStyle = 'rgba(236, 72, 153, 0.8)';
+    ctx.fillStyle = 'rgba(236, 72, 153, 0.2)';
+    ctx.lineWidth = 2;
+    
+    boxes.forEach(box => {
+        const x1 = box[0] * selectionCanvas.width / 100.0;
+        const y1 = box[1] * selectionCanvas.height / 100.0;
+        const w = (box[2] - box[0]) * selectionCanvas.width / 100.0;
+        const h = (box[3] - box[1]) * selectionCanvas.height / 100.0;
+        ctx.fillRect(x1, y1, w, h);
+        ctx.strokeRect(x1, y1, w, h);
+    });
+    
+    clearBoxesBtn.disabled = (boxes.length === 0);
 }
