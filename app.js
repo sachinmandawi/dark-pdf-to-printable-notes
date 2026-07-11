@@ -19,6 +19,7 @@ const pageRangeInput = document.getElementById('page-range');
 const outputNameInput = document.getElementById('output-name');
 const slidesSelect = document.getElementById('slides-select');
 const slideScale = document.getElementById('slide-scale');
+const pageSizeSelect = document.getElementById('page-size-select');
 const slideScaleVal = document.getElementById('slide-scale-val');
 const convertBtn = document.getElementById('convert-btn');
 
@@ -297,6 +298,10 @@ function setupSettingsEvents() {
         currentPage = 1;
         triggerPreviewRefresh();
     });
+
+    if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', triggerPreviewRefresh);
+    }
 }
 
 function triggerPreviewRefresh() {
@@ -595,11 +600,26 @@ async function loadPreview() {
                 const rows = layout.rows;
                 const orient = layout.orient;
                 
-                // Render A4 sheet at 100 DPI
-                const a4W = Math.round(8.27 * 100);
-                const a4H = Math.round(11.69 * 100);
-                const pageW = orient === 'l' ? a4H : a4W;
-                const pageH = orient === 'l' ? a4W : a4H;
+                // Render layout sheet at 100 DPI
+                const pageSize = pageSizeSelect ? pageSizeSelect.value : 'a4';
+                let paperW = 8.27;
+                let paperH = 11.69;
+                
+                if (pageSize === 'letter') {
+                    paperW = 8.5;
+                    paperH = 11.0;
+                } else if (pageSize === 'a3') {
+                    paperW = 11.69;
+                    paperH = 16.54;
+                } else if (pageSize === 'a5') {
+                    paperW = 5.83;
+                    paperH = 8.27;
+                }
+                
+                const pW = Math.round(paperW * 100);
+                const pH = Math.round(paperH * 100);
+                const pageW = orient === 'l' ? pH : pW;
+                const pageH = orient === 'l' ? pW : pH;
                 
                 const canvasPageOrig = document.createElement('canvas');
                 canvasPageOrig.width = pageW;
@@ -1032,10 +1052,25 @@ async function startConversion() {
                     const rows = layout.rows;
                     const orient = layout.orient;
                     
-                    const a4W = Math.round(8.27 * dpi);
-                    const a4H = Math.round(11.69 * dpi);
-                    const pageW = orient === 'l' ? a4H : a4W;
-                    const pageH = orient === 'l' ? a4W : a4H;
+                    const pageSize = pageSizeSelect ? pageSizeSelect.value : 'a4';
+                    let paperW = 8.27;
+                    let paperH = 11.69;
+                    
+                    if (pageSize === 'letter') {
+                        paperW = 8.5;
+                        paperH = 11.0;
+                    } else if (pageSize === 'a3') {
+                        paperW = 11.69;
+                        paperH = 16.54;
+                    } else if (pageSize === 'a5') {
+                        paperW = 5.83;
+                        paperH = 8.27;
+                    }
+                    
+                    const pW = Math.round(paperW * dpi);
+                    const pH = Math.round(paperH * dpi);
+                    const pageW = orient === 'l' ? pH : pW;
+                    const pageH = orient === 'l' ? pW : pH;
                     
                     pdfDocOut = new jsPDF({
                         orientation: orient,
