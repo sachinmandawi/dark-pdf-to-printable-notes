@@ -37,6 +37,7 @@ class ConvertRequest(BaseModel):
     intensity: int
     page_range: str
     output_name: str
+    slides_per_page: Optional[int] = 1
     boxes: Optional[dict] = None
 
 def add_task_log(task_id: str, text: str, level: str = "info"):
@@ -156,6 +157,7 @@ def convert_pdf_worker(
     intensity: int,
     page_range: str,
     output_name: str,
+    slides_per_page: int = 1,
     boxes: Optional[dict] = None
 ):
     temp_files = []
@@ -226,21 +228,113 @@ def convert_pdf_worker(
             
         # Compile to PDF
         update_task_progress(task_id, 92, "Compiling PDF document...", "Compressing slides")
-        add_task_log(task_id, "Compiling inverted pages into final PDF...", "info")
+        add_task_log(task_id, f"Compiling inverted pages into final PDF ({slides_per_page} slides/page)...", "info")
         
-        # Load temp images and save as single PDF
-        images = [Image.open(tf) for tf in temp_files]
-        if images:
-            images[0].save(
-                out_pdf_path,
-                "PDF",
-                resolution=float(dpi),
-                save_all=True,
-                append_images=images[1:]
-            )
-            # Close images
-            for img in images:
-                img.close()
+        if slides_per_page == 1:
+            # 1 Slide Per Page (Standard compiler)
+            images = [Image.open(tf) for tf in temp_files]
+            if images:
+                images[0].save(
+                    out_pdf_path,
+                    "PDF",
+                    resolution=float(dpi),
+                    save_all=True,
+                    append_images=images[1:]
+                )
+                for img in images:
+                    img.close()
+        else:
+            # N-up grid layouts on A4 paper: (cols, rows, orientation)
+            layouts = {
+                2: (1, 2, 'p'),
+                3: (1, 3, 'p'),
+                4: (2, 2, 'p'),
+                6: (2, 3, 'p'),
+                8: (2, 4, 'p'),
+                10: (2, 5, 'p')
+            }
+            cols, rows, orient = layouts.get(slides_per_page, (1, 1, 'l'))
+            
+            # A4 size in pixels: 8.27 x 11.69 inches. Scale by DPI.
+            a4_w = int(8.27 * dpi)
+            a4_h = int(11.69 * dpi)
+            page_w = a4_h if orient == 'l' else a4_w
+            page_h = a4_w if orient == 'l' else a4_h
+            
+            # Margins and gaps
+            margin_x = int(0.04 * page_w)
+            margin_y = int(0.04 * page_h)
+            gap_x = int(0.02 * page_w)
+            gap_y = int(0.02 * page_h)
+            
+            usable_w = page_w - 2 * margin_x - (cols - 1) * gap_x
+            usable_h = page_h - 2 * margin_y - (rows - 1) * gap_y
+            
+            cell_w = usable_w // cols
+            cell_h = usable_h // rows
+            
+            # Read first image to determine aspect ratio
+            first_img = Image.open(temp_files[0])
+            orig_w, orig_h = first_img.size
+            first_img.close()
+            
+            orig_aspect = orig_w / orig_h
+            target_aspect = cell_w / cell_h
+            
+            if orig_aspect > target_aspect:
+                fit_w = cell_w
+                fit_h = int(cell_w / orig_aspect)
+            else:
+                fit_h = cell_h
+                fit_w = int(cell_h * orig_aspect)
+                
+            grid_pages = []
+            chunk_size = cols * rows
+            
+            for i in range(0, len(temp_files), chunk_size):
+                chunk = temp_files[i : i + chunk_size]
+                
+                # Create blank A4 page
+                page_img = Image.new("RGB", (page_w, page_h), (255, 255, 255))
+                from PIL import ImageDraw
+                draw = ImageDraw.Draw(page_img)
+                
+                for idx, tf in enumerate(chunk):
+                    img = Image.open(tf)
+                    img_resized = img.resize((fit_w, fit_h), Image.Resampling.LANCZOS)
+                    
+                    r_idx = idx // cols
+                    c_idx = idx % cols
+                    
+                    cell_x = margin_x + c_idx * (cell_w + gap_x)
+                    cell_y = margin_y + r_idx * (cell_h + gap_y)
+                    
+                    # Center inside cell
+                    paste_x = cell_x + (cell_w - fit_w) // 2
+                    paste_y = cell_y + (cell_h - fit_h) // 2
+                    
+                    page_img.paste(img_resized, (paste_x, paste_y))
+                    img.close()
+                    
+                    # Draw border Guide
+                    draw.rectangle(
+                        [paste_x, paste_y, paste_x + fit_w, paste_y + fit_h], 
+                        outline=(220, 220, 220), 
+                        width=1
+                    )
+                    
+                grid_pages.append(page_img)
+                
+            if grid_pages:
+                grid_pages[0].save(
+                    out_pdf_path,
+                    "PDF",
+                    resolution=float(dpi),
+                    save_all=True,
+                    append_images=grid_pages[1:]
+                )
+                for p in grid_pages:
+                    p.close()
                 
         # Clean up temp files
         for tf in temp_files:
@@ -401,6 +495,7 @@ async def convert_pdf(req: ConvertRequest, background_tasks: BackgroundTasks):
             req.intensity,
             req.page_range,
             req.output_name,
+            req.slides_per_page,
             req.boxes
         )
     )
