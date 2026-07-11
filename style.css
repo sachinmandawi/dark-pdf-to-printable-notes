@@ -910,3 +910,102 @@ footer {
     transform: scale(0.96) !important;
 }
 
+/* Comprehensive Responsive Media Queries (Mobiles, Tablets, Desktops) */
+
+/* 1. Tablet Screens (max-width: 768px) */
+@media (max-width: 768px) {
+    header {
+        padding: 1rem 1.5rem;
+    }
+    
+    h1 {
+        font-size: 1.35rem;
+    }
+    
+    main {
+        padding: 1.5rem 1rem;
+        gap: 1.5rem;
+    }
+    
+    .card {
+        padding: 1.5rem;
+    }
+    
+    .compare-img-wrapper img {
+        max-height: 450px;
+    }
+    
+    /* Make layout grids stack nicely */
+    .compare-label {
+        font-size: 0.65rem;
+        padding: 0.15rem 0.4rem;
+    }
+}
+
+/* 2. Small Mobile Screens (max-width: 480px) */
+@media (max-width: 480px) {
+    header {
+        padding: 0.8rem 1rem;
+        flex-direction: column;
+        gap: 0.5rem;
+        text-align: center;
+    }
+    
+    .logo-container {
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+    
+    h1 {
+        font-size: 1.2rem;
+    }
+    
+    main {
+        padding: 1rem 0.5rem;
+        gap: 1rem;
+    }
+    
+    .card {
+        padding: 1rem;
+        border-radius: var(--radius-md);
+    }
+    
+    .card-title {
+        font-size: 1.05rem;
+        margin-bottom: 1rem;
+    }
+    
+    .upload-zone {
+        padding: 1.5rem 1rem;
+    }
+    
+    .upload-icon {
+        font-size: 1.75rem;
+        margin-bottom: 0.4rem;
+    }
+    
+    .upload-text {
+        font-size: 0.8rem;
+    }
+    
+    .compare-img-wrapper img {
+        max-height: 320px;
+    }
+    
+    .preview-nav {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.75rem;
+    }
+    
+    .preview-nav > div {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .icon-btn, .btn, .btn-outline {
+        padding: 0.6rem 1rem;
+        font-size: 0.85rem;
+    }
+}
+
