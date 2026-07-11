@@ -237,6 +237,7 @@ function resetFileSelection() {
     if (drawModeBtn) {
         drawModeBtn.classList.remove('active');
         drawModeBtn.style.background = '';
+        drawModeBtn.textContent = '🎨 Draw Box';
     }
     if (boxesContainer) {
         boxesContainer.classList.add('hidden');
@@ -1241,6 +1242,7 @@ function setupDrawingEvents() {
         if (isDrawMode) {
             drawModeBtn.classList.add('active');
             drawModeBtn.style.background = 'var(--primary)';
+            drawModeBtn.textContent = '✔️ Done Drawing';
             boxesContainer.classList.remove('hidden');
             boxesContainer.style.pointerEvents = 'auto';
             
@@ -1255,6 +1257,7 @@ function setupDrawingEvents() {
         } else {
             drawModeBtn.classList.remove('active');
             drawModeBtn.style.background = '';
+            drawModeBtn.textContent = '🎨 Draw Box';
             boxesContainer.classList.add('hidden');
             boxesContainer.style.pointerEvents = 'none';
             
