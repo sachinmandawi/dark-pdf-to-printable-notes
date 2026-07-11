@@ -456,7 +456,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .compare-img-wrapper {
     position: relative;
     width: auto;
-    height: 100%;
     max-width: 100%;
     display: inline-block;
     box-shadow: 0 10px 30px rgba(0,0,0,0.5);
@@ -469,7 +468,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     max-height: 600px;
     width: auto;
     max-width: 100%;
-    object-fit: contain;
+    height: auto;
 }
 
 .img-before {
@@ -486,7 +485,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .img-before img {
     max-width: none;
     height: 100%;
-    object-fit: contain;
+    object-fit: fill;
 }
 
 .compare-slider-bar {
