@@ -17,7 +17,6 @@ const colorIntensity = document.getElementById('color-intensity');
 const colorIntensityVal = document.getElementById('color-intensity-val');
 const textContrast = document.getElementById('text-contrast');
 const textContrastVal = document.getElementById('text-contrast-val');
-const removeLogoCheckbox = document.getElementById('remove-logo-checkbox');
 const pageRangeInput = document.getElementById('page-range');
 const outputNameInput = document.getElementById('output-name');
 const slidesSelect = document.getElementById('slides-select');
@@ -305,10 +304,6 @@ function setupSettingsEvents() {
         currentPage = 1;
         triggerPreviewRefresh();
     });
-
-    if (removeLogoCheckbox) {
-        removeLogoCheckbox.addEventListener('change', triggerPreviewRefresh);
-    }
 }
 
 function triggerPreviewRefresh() {
@@ -570,7 +565,6 @@ async function loadPreview() {
                     parseInt(bgThreshold.value),
                     parseInt(colorIntensity.value),
                     parseInt(textContrast.value),
-                    removeLogoCheckbox ? removeLogoCheckbox.checked : false,
                     pageBoxes[currentPage],
                     imgData.width,
                     imgData.height
@@ -685,7 +679,6 @@ async function loadPreview() {
                         parseInt(bgThreshold.value),
                         parseInt(colorIntensity.value),
                         parseInt(textContrast.value),
-                        removeLogoCheckbox ? removeLogoCheckbox.checked : false,
                         pageBoxes[pageNum + 1],
                         imgData.width,
                         imgData.height
@@ -784,7 +777,7 @@ function showError(msg) {
     alert(msg);
 }
 
-function invertPixelsClientSide(data, mode, threshold, intensity, contrast, removeLogo, boxes, w, h) {
+function invertPixelsClientSide(data, mode, threshold, intensity, contrast, boxes, w, h) {
     w = Math.round(w);
     h = Math.round(h);
     let hasBoxes = boxes && boxes.length > 0;
@@ -795,13 +788,6 @@ function invertPixelsClientSide(data, mode, threshold, intensity, contrast, remo
         let py = Math.floor(pixelIndex / w);
         let pxPct = px / w * 100.0;
         let pyPct = py / h * 100.0;
-        
-        if (removeLogo && pxPct >= 0 && pxPct <= 12 && pyPct >= 0 && pyPct <= 12) {
-            data[i] = 255;
-            data[i+1] = 255;
-            data[i+2] = 255;
-            continue;
-        }
         
         let insideBox = false;
         if (hasBoxes) {
@@ -1014,7 +1000,6 @@ async function startConversion() {
                         parseInt(bgThreshold.value),
                         parseInt(colorIntensity.value),
                         parseInt(textContrast.value),
-                        removeLogoCheckbox ? removeLogoCheckbox.checked : false,
                         pageBoxes[pageNum + 1],
                         imgData.width,
                         imgData.height
