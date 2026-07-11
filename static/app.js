@@ -15,6 +15,8 @@ const bgThresholdVal = document.getElementById('bg-threshold-val');
 const bgThresholdRow = document.getElementById('bg-threshold-row');
 const colorIntensity = document.getElementById('color-intensity');
 const colorIntensityVal = document.getElementById('color-intensity-val');
+const textContrast = document.getElementById('text-contrast');
+const textContrastVal = document.getElementById('text-contrast-val');
 const pageRangeInput = document.getElementById('page-range');
 const outputNameInput = document.getElementById('output-name');
 const slidesSelect = document.getElementById('slides-select');
@@ -288,6 +290,11 @@ function setupSettingsEvents() {
     });
     colorIntensity.addEventListener('change', triggerPreviewRefresh);
 
+    textContrast.addEventListener('input', (e) => {
+        textContrastVal.textContent = e.target.value + '%';
+    });
+    textContrast.addEventListener('change', triggerPreviewRefresh);
+
     slideScale.addEventListener('input', (e) => {
         slideScaleVal.textContent = e.target.value + '%';
     });
@@ -557,6 +564,7 @@ async function loadPreview() {
                     modeSelect.value,
                     parseInt(bgThreshold.value),
                     parseInt(colorIntensity.value),
+                    parseInt(textContrast.value),
                     pageBoxes[currentPage],
                     imgData.width,
                     imgData.height
@@ -670,6 +678,7 @@ async function loadPreview() {
                         modeSelect.value,
                         parseInt(bgThreshold.value),
                         parseInt(colorIntensity.value),
+                        parseInt(textContrast.value),
                         pageBoxes[pageNum + 1],
                         imgData.width,
                         imgData.height
@@ -768,7 +777,7 @@ function showError(msg) {
     alert(msg);
 }
 
-function invertPixelsClientSide(data, mode, threshold, intensity, boxes, w, h) {
+function invertPixelsClientSide(data, mode, threshold, intensity, contrast, boxes, w, h) {
     w = Math.round(w);
     h = Math.round(h);
     let hasBoxes = boxes && boxes.length > 0;
@@ -856,6 +865,18 @@ function invertPixelsClientSide(data, mode, threshold, intensity, boxes, w, h) {
             data[i] = Math.max(0, Math.min(255, (1.0 - color_mask) * neutral_r + color_mask * color_r));
             data[i+1] = Math.max(0, Math.min(255, (1.0 - color_mask) * neutral_g + color_mask * color_g));
             data[i+2] = Math.max(0, Math.min(255, (1.0 - color_mask) * neutral_b + color_mask * color_b));
+        }
+
+        // 5. Apply Contrast / Boldness enhancement (Gamma correction)
+        if (contrast && contrast > 100) {
+            let gamma = contrast / 100.0;
+            let final_r = data[i];
+            let final_g = data[i+1];
+            let final_b = data[i+2];
+            
+            data[i] = Math.max(0, Math.min(255, Math.pow(final_r / 255.0, gamma) * 255.0));
+            data[i+1] = Math.max(0, Math.min(255, Math.pow(final_g / 255.0, gamma) * 255.0));
+            data[i+2] = Math.max(0, Math.min(255, Math.pow(final_b / 255.0, gamma) * 255.0));
         }
     }
 }
@@ -978,6 +999,7 @@ async function startConversion() {
                         modeSelect.value,
                         parseInt(bgThreshold.value),
                         parseInt(colorIntensity.value),
+                        parseInt(textContrast.value),
                         pageBoxes[pageNum + 1],
                         imgData.width,
                         imgData.height
