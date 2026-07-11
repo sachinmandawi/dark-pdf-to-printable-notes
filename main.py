@@ -37,6 +37,7 @@ class ConvertRequest(BaseModel):
     intensity: int
     page_range: str
     output_name: str
+    boxes: Optional[dict] = None
 
 def add_task_log(task_id: str, text: str, level: str = "info"):
     with tasks_lock:
@@ -77,7 +78,7 @@ def parse_page_range(range_str: str, total_pages: int) -> List[int]:
     return sorted(list(pages))
 
 # Process Image Array
-def invert_pixels(arr_np: np.ndarray, mode: str, threshold: int, intensity: int) -> Image.Image:
+def invert_pixels(arr_np: np.ndarray, mode: str, threshold: int, intensity: int, boxes: Optional[List[List[float]]] = None) -> Image.Image:
     r, g, b = arr_np[:,:,0], arr_np[:,:,1], arr_np[:,:,2]
     max_c = np.maximum(np.maximum(r, g), b)
     
@@ -93,13 +94,11 @@ def invert_pixels(arr_np: np.ndarray, mode: str, threshold: int, intensity: int)
         scale = intensity / 110.0
         inverted_y = np.clip(inverted_y * scale, 0.0, 255.0)
         
-        smart_arr = np.repeat(inverted_y[:, :, np.newaxis], 3, axis=2).astype(np.uint8)
-        return Image.fromarray(smart_arr)
+        target_arr = np.repeat(inverted_y[:, :, np.newaxis], 3, axis=2)
         
     elif mode == "simple":
         # Basic Negative Inversion
-        simple_arr = (255.0 - arr_np).astype(np.uint8)
-        return Image.fromarray(simple_arr)
+        target_arr = 255.0 - arr_np
         
     else: # "smart" mode
         min_c = np.minimum(np.minimum(r, g), b)
@@ -130,9 +129,22 @@ def invert_pixels(arr_np: np.ndarray, mode: str, threshold: int, intensity: int)
         color_preserved = np.clip(color_preserved, 0.0, 255.0)
         
         # 4. Combine
-        smart_arr = (1.0 - color_mask) * neutral_inv + color_mask * color_preserved
-        smart_arr = np.clip(smart_arr, 0.0, 255.0).astype(np.uint8)
-        return Image.fromarray(smart_arr)
+        target_arr = (1.0 - color_mask) * neutral_inv + color_mask * color_preserved
+        
+    # Apply Bounding Box Mask if provided (reverts pixels inside boxes back to original)
+    if boxes:
+        H, W, _ = arr_np.shape
+        diagram_mask = np.zeros((H, W, 1), dtype=np.float32)
+        for box in boxes:
+            x1 = int(box[0] * W / 100.0)
+            y1 = int(box[1] * H / 100.0)
+            x2 = int(box[2] * W / 100.0)
+            y2 = int(box[3] * H / 100.0)
+            diagram_mask[y1:y2, x1:x2, 0] = 1.0
+        target_arr = (1.0 - diagram_mask) * target_arr + diagram_mask * arr_np
+
+    final_arr = np.clip(target_arr, 0.0, 255.0).astype(np.uint8)
+    return Image.fromarray(final_arr)
 
 # Background Worker
 def convert_pdf_worker(
@@ -143,7 +155,8 @@ def convert_pdf_worker(
     threshold: int,
     intensity: int,
     page_range: str,
-    output_name: str
+    output_name: str,
+    boxes: Optional[dict] = None
 ):
     temp_files = []
     try:
@@ -158,7 +171,6 @@ def convert_pdf_worker(
         add_task_log(task_id, f"Processing {len(pages_to_process)} pages out of {total_pages} total pages.", "info")
         
         # Define output path
-        # If input is in CACHE_DIR, save to OUTPUT_DIR. Else save in same directory as input!
         input_dir = os.path.dirname(filepath)
         if os.path.abspath(input_dir).lower() == os.path.abspath(CACHE_DIR).lower():
             out_pdf_path = os.path.join(OUTPUT_DIR, output_name)
@@ -199,8 +211,11 @@ def convert_pdf_worker(
             # Convert to numpy
             arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape((pix.height, pix.width, 3)).astype(np.float32)
             
+            # Extract boxes for this page
+            page_boxes = boxes.get(str(page_num + 1)) if boxes else None
+            
             # Run Inversion
-            img = invert_pixels(arr, mode, threshold, intensity)
+            img = invert_pixels(arr, mode, threshold, intensity, page_boxes)
             
             # Save to temporary image on disk (saves RAM)
             temp_img_path = os.path.join(CACHE_DIR, f"task_{task_id}_p{page_num}.png")
@@ -301,7 +316,8 @@ async def get_preview(
     mode: str,
     dpi: int,
     threshold: int,
-    intensity: int
+    intensity: int,
+    boxes: Optional[str] = None
 ):
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="File not found.")
@@ -323,8 +339,17 @@ async def get_preview(
         pix_target = page_obj.get_pixmap(matrix=fitz.Matrix(zoom_target, zoom_target))
         arr = np.frombuffer(pix_target.samples, dtype=np.uint8).reshape((pix_target.height, pix_target.width, 3)).astype(np.float32)
         
+        # Parse boxes JSON string if provided
+        parsed_boxes = None
+        if boxes:
+            try:
+                import json
+                parsed_boxes = json.loads(boxes)
+            except Exception as ex:
+                print(f"Error parsing preview boxes: {ex}")
+        
         # Process preview
-        img_inv = invert_pixels(arr, mode, threshold, intensity)
+        img_inv = invert_pixels(arr, mode, threshold, intensity, parsed_boxes)
         
         # Encode original as PNG base64
         buf_orig = io.BytesIO()
@@ -375,7 +400,8 @@ async def convert_pdf(req: ConvertRequest, background_tasks: BackgroundTasks):
             req.threshold,
             req.intensity,
             req.page_range,
-            req.output_name
+            req.output_name,
+            req.boxes
         )
     )
     t.daemon = True
