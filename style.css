@@ -66,6 +66,7 @@
 html, body {
     -ms-overflow-style: none;  /* IE and Edge */
     scrollbar-width: none;  /* Firefox */
+    background-color: #020617; /* Set default dark background color to prevent white space showing on rubber-band/elastic scroll */
 }
 
 html::-webkit-scrollbar,
