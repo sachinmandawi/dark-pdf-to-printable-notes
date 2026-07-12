@@ -62,6 +62,17 @@
     font-family: 'Outfit', sans-serif;
 }
 
+/* Hide scrollbar completely for all elements while maintaining scroll function */
+html, body {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+}
+
 body {
     background: var(--bg-gradient);
     background-attachment: fixed;
