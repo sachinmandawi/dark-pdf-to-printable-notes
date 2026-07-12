@@ -916,6 +916,7 @@ footer {
 @media (max-width: 768px) {
     header {
         padding: 1rem 1.5rem;
+        position: static; /* Revert sticky position to let it scroll away naturally on mobile/tablet */
     }
     
     h1 {
