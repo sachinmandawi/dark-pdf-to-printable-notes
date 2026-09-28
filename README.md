@@ -32,3 +32,14 @@ An interactive local web application designed to convert dark-themed PDF lecture
 ## Tech Stack
 - **Backend**: FastAPI, PyMuPDF, NumPy, Pillow
 - **Frontend**: Vanilla HTML5, CSS3 (Glassmorphism design system), and JavaScript
+
+
+---
+
+## 👤 Author
+
+**Sachin Mandawi** — *Software & Android Developer*
+- 🌐 **Official Website & Portfolio:** [https://sachinmandawi.me](https://sachinmandawi.me)
+- 💻 **GitHub:** [@sachinmandawi](https://github.com/sachinmandawi)
+- 📷 **Instagram:** [@sachinmandawi](https://www.instagram.com/sachinmandawi)
+- 📌 **Pinterest:** [in.pinterest.com/sachinmandawi](https://in.pinterest.com/sachinmandawi/)
